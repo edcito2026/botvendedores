@@ -26,7 +26,7 @@ API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 PALABRA_CLAVE = "resumen"
 
 # Rutas
-BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
+BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\\botvendedores\ventas.db'
 EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\vendedores.xlsx'
 
 # Logging
