@@ -52,10 +52,10 @@ def obtener_vendedor_de_excel(numero_telefono):
         ws = wb.active
 
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if row[1]:
-                tel = ''.join(filter(str.isdigit, str(row[1])))
+            if row[2]:
+                tel = ''.join(filter(str.isdigit, str(row[2])))
                 if tel == numero_limpio or tel.endswith(numero_limpio):
-                    return row[0]  # Retorna nombre vendedor
+                    return row[1]  # Retorna nombre vendedor
 
         return None
 
