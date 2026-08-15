@@ -27,7 +27,7 @@ PALABRA_CLAVE = "resumen"
 
 # Rutas
 BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
-EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx'
+EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\vendedores.xlsx'
 
 # Logging
 import os
