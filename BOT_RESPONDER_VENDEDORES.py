@@ -21,8 +21,8 @@ API_VERSION = "v18.0"
 API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 
 # ===== RUTAS =====
-BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
-EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\VENDEDORES.xlsx'
+BD_PATH = 'ventas.db'
+EXCEL_VENDEDORES = 'vendedores.xlsx'
 
 # ===== LOGGING =====
 os.makedirs('logs', exist_ok=True)
