@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 🤖 BOT RESPONDER A VENDEDORES
-Recibe "Avance de ventas" → Valida → Obtiene datos → Responde
+Recibe "resumen" → Valida → Obtiene datos → Responde
 """
 
 from flask import Flask, request, jsonify
@@ -242,7 +242,7 @@ def recibir():
         logger.info(f'De: {numero_remitente} | Mensaje: "{texto_mensaje}"')
 
         # Verificar palabra clave
-        if "Avance de ventas" not in texto_mensaje:
+        if "resumen" not in texto_mensaje.lower():
             logger.info('Palabra clave no encontrada')
             return jsonify({"status": "ok"}), 200
 
@@ -288,7 +288,7 @@ if __name__ == '__main__':
     logger.info('🤖 BOT RESPONDER VENDEDORES INICIANDO')
     logger.info('='*60)
     logger.info(f'Escuchando: http://localhost:5000/webhook')
-    logger.info(f'Palabra clave: "Avance de ventas"')
+    logger.info(f'Palabra clave: "resumen"')
     logger.info('='*60 + '\n')
 
     app.run(host='0.0.0.0', port=5000, debug=True)
