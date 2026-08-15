@@ -1,0 +1,26 @@
+2026-08-15 12:39:32,091 - INFO - ======================================================================
+2026-08-15 12:39:32,091 - INFO - 🚀 SERVIDOR WEBHOOK WHATSAPP INICIANDO
+2026-08-15 12:39:32,092 - INFO - ======================================================================
+2026-08-15 12:39:32,092 - INFO - Escuchando en: http://localhost:5000/webhook
+2026-08-15 12:39:32,092 - INFO - Palabra clave: "resumen"
+2026-08-15 12:39:32,092 - INFO - BD: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db
+2026-08-15 12:39:32,093 - INFO - Excel vendedores: E:\PRUEBASEXTRACTOR\VENDEDORES.xlsx
+2026-08-15 12:39:32,093 - INFO - ======================================================================
+
+2026-08-15 12:39:32,318 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-08-15 12:39:32,318 - INFO - [33mPress CTRL+C to quit[0m
+2026-08-15 12:39:32,321 - INFO -  * Restarting with stat
+2026-08-15 12:39:32,996 - INFO - ======================================================================
+2026-08-15 12:39:32,996 - INFO - 🚀 SERVIDOR WEBHOOK WHATSAPP INICIANDO
+2026-08-15 12:39:32,996 - INFO - ======================================================================
+2026-08-15 12:39:32,996 - INFO - Escuchando en: http://localhost:5000/webhook
+2026-08-15 12:39:32,996 - INFO - Palabra clave: "resumen"
+2026-08-15 12:39:32,997 - INFO - BD: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db
+2026-08-15 12:39:32,997 - INFO - Excel vendedores: E:\PRUEBASEXTRACTOR\VENDEDORES.xlsx
+2026-08-15 12:39:32,997 - INFO - ======================================================================
+
+2026-08-15 12:39:33,032 - WARNING -  * Debugger is active!
+2026-08-15 12:39:33,036 - INFO -  * Debugger PIN: 127-441-620

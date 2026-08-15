@@ -3,7 +3,6 @@
 """
 🤖 BOT RESPONDER A VENDEDORES
 Recibe "resumen" → Valida → Obtiene datos → Responde
-FIXED: Línea 54 min_row=2 → min_row=3 (salta encabezados del Excel)
 """
 
 from flask import Flask, request, jsonify
@@ -52,7 +51,7 @@ def obtener_vendedor_de_excel(numero_telefono):
         wb = openpyxl.load_workbook(EXCEL_VENDEDORES)
         ws = wb.active
 
-        for row in ws.iter_rows(min_row=3, values_only=True):
+        for row in ws.iter_rows(min_row=2, values_only=True):
             if row[2]:
                 tel = ''.join(filter(str.isdigit, str(row[2])))
                 if tel == numero_limpio or tel.endswith(numero_limpio):
