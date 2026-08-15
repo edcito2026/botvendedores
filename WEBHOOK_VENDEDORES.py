@@ -7,6 +7,7 @@ y envía reporte dinámico por WhatsApp API
 FIXED: Índices Excel, palabra clave "resumen", min_row=3
 
 Se añadió compatibilidad con variables de entorno (fallbacks a nombres antiguos)
+Se añadió hotfix: detección robusta de teléfono en cada fila del Excel (escanea celdas)
 """
 
 from flask import Flask, request, jsonify
@@ -33,6 +34,10 @@ PALABRA_CLAVE = os.environ.get('PALABRA_CLAVE', 'resumen')
 BD_PATH = os.environ.get('BD_PATH') or r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
 EXCEL_VENDEDORES = os.environ.get('EXCEL_VENDEDORES') or r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx'
 
+# Excel read settings
+VEN_START_ROW = int(os.environ.get('VEN_START_ROW', '1'))  # 1-based
+VEN_MIN_PHONE_LEN = int(os.environ.get('VEN_MIN_PHONE_LEN', '7'))  # minimal digits to consider a phone
+
 # Logging
 os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
@@ -50,53 +55,76 @@ app = Flask(__name__)
 
 # ===== 1. VALIDAR VENDEDOR =====
 def obtener_vendedores_autorizados():
-    """Lee lista de vendedores autorizados desde Excel"""
+    """Lee lista de vendedores autorizados desde Excel.
+    Hotfix: escanea cada fila y detecta la primera celda con suficientes dígitos para considerarla teléfono.
+    Guarda los últimos 9 dígitos para comparación consistente.
+    """
     try:
         logger.info('📋 Leyendo vendedores autorizados desde Excel...')
         vendedores = {}
 
-        wb = openpyxl.load_workbook(EXCEL_VENDEDORES)
+        if not os.path.exists(EXCEL_VENDEDORES):
+            logger.error(f'Archivo Excel no encontrado: {EXCEL_VENDEDORES}')
+            return {}
+
+        wb = openpyxl.load_workbook(EXCEL_VENDEDORES, read_only=True, data_only=True)
         ws = wb.active
 
-        # Estructura correcta del Excel:
-        # Fila 2: Encabezados (Código Vendedor | Nombre Vendedor | Teléfono | Clientes CALIF=D)
-        # Fila 3+: Datos (10 | ABDEL MARTIN... | 970507377 | 19)
-        for row in ws.iter_rows(min_row=3, values_only=True):
-            if row[2]:  # Teléfono en columna C (index 2)
-                telefono = str(row[2]).strip()
-                # Normalizar teléfono: quitar espacios y caracteres especiales
-                telefono_limpio = ''.join(filter(str.isdigit, telefono))
+        # openpyxl iter_rows min_row expects 1-based indexing
+        for row in ws.iter_rows(min_row=VEN_START_ROW, values_only=True):
+            if not row:
+                continue
 
-                vendedores[telefono_limpio] = {
-                    'nombre': row[1],  # Nombre en columna B (index 1)
-                    'codigo': row[0],  # Código en columna A (index 0)
-                    'telefono': telefono_limpio
+            # scan row for phone-like cell (first with enough digits)
+            phone_raw = None
+            name_raw = None
+            for cell in row:
+                if cell is None:
+                    continue
+                s = str(cell).strip()
+                digits = ''.join(filter(str.isdigit, s))
+                # decide if it's a phone by minimal length
+                if not phone_raw and len(digits) >= VEN_MIN_PHONE_LEN:
+                    phone_raw = digits
+                    continue
+                # otherwise consider as name if it contains letters and name not found
+                if not name_raw and any(c.isalpha() for c in s):
+                    name_raw = s
+
+            if phone_raw:
+                # normalize to last 9 digits for Peru mobile numbers
+                tel_last9 = phone_raw[-9:]
+                nombre = name_raw or ''
+                vendedores[tel_last9] = {
+                    'nombre': nombre,
+                    'telefono': tel_last9
                 }
 
         logger.info(f'✅ {len(vendedores)} vendedores autorizados cargados')
+        logger.debug(f'Listado vendedores (last9): {list(vendedores.keys())}')
         return vendedores
 
     except Exception as e:
-        logger.error(f'❌ Error leyendo Excel: {e}')
+        logger.exception(f'❌ Error leyendo Excel: {e}')
         return {}
 
 
 def validar_vendedor(numero_telefonico):
-    """Valida si el número de teléfono está autorizado"""
-    # Normalizar número
-    numero_limpio = ''.join(filter(str.isdigit, numero_telefonico))
+    """Valida si el número de teléfono está autorizado (compara últimos 9 dígitos)."""
+    try:
+        numero_limpio = ''.join(filter(str.isdigit, str(numero_telefonico)))
+        numero_last9 = numero_limpio[-9:] if len(numero_limpio) >= 9 else numero_limpio
 
-    # Remover prefijo internacional si está presente
-    if numero_limpio.startswith('51'):
-        numero_limpio = numero_limpio[2:]
+        vendedores = obtener_vendedores_autorizados()
 
-    vendedores = obtener_vendedores_autorizados()
-
-    if numero_limpio in vendedores:
-        logger.info(f'✅ Vendedor autorizado: {vendedores[numero_limpio]["nombre"]}')
-        return True, vendedores[numero_limpio]
-    else:
-        logger.warning(f'⚠️  Número no autorizado: {numero_telefonico}')
+        if numero_last9 in vendedores:
+            logger.info(f'✅ Vendedor autorizado: {vendedores[numero_last9]["nombre"]}')
+            return True, vendedores[numero_last9]
+        else:
+            logger.warning(f'⚠️  No se encontró vendedor para número {numero_telefonico} (last9={numero_last9})')
+            return False, None
+    except Exception:
+        logger.exception('Error validando vendedor')
         return False, None
 
 
