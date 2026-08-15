@@ -144,7 +144,27 @@ def obtener_datos_vendedor(nombre_vendedor):
 
 
 def generar_respuesta(nombre, ventas):
-    """Genera mensaje de respuesta"""
+    """Genera mensaje de respuesta (personal o general)"""
+
+    # Si es reporte general para Jefe/Supervisor
+    if ventas.get('es_general'):
+        return f"""📊 RESUMEN GENERAL ARCOR - AGOSTO
+{datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+👥 Consolidado del Equipo
+
+DESEMPEÑO GENERAL:
+Ventas Totales: S/. {ventas['total']:,.2f}
+Cuota Total: S/. {ventas['cuota']:,.2f}
+Cumplimiento: {ventas['cumplimiento']:.1f}%
+
+COBERTURA:
+Clientes: {ventas['clientes']}
+Ticket Promedio: S/. {ventas['ticket']:,.2f}
+
+Sistema Automatizado N&J"""
+
+    # Si es reporte personal
     return f"""📊 REPORTE PERSONAL - AGOSTO
 {datetime.now().strftime("%d/%m/%Y %H:%M")}
 
@@ -167,6 +187,65 @@ Cumpl. Final: {(ventas['proyeccion']/ventas['cuota']*100):.1f}%
 Días Pendientes: {ventas['dias_restantes']}
 
 Sistema N&J"""
+
+
+def obtener_datos_generales():
+    """Obtiene datos consolidados de TODOS los vendedores ARCOR"""
+    try:
+        logger.info('🔄 Consultando datos generales consolidados...')
+        conn = sqlite3.connect(BD_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Total de ventas ARCOR
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Proveedor = "ARCOR"
+        ''')
+        total_ventas = cursor.fetchone()['total'] or 0
+
+        # Cobertura (clientes únicos)
+        cursor.execute('''
+            SELECT COUNT(DISTINCT Cod_Clie) as total
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Proveedor = "ARCOR"
+        ''')
+        cobertura = cursor.fetchone()['total'] or 0
+
+        # Ticket promedio
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Proveedor = "ARCOR"
+        ''')
+        ticket = cursor.fetchone()['ticket'] or 0
+
+        # Cuota total ARCOR
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Cuota_Soles AS REAL)), 2) as cuota
+            FROM cuotas
+            WHERE AÑO = 2026 AND NRO_MES = 8 AND Proveedor = "ARCOR"
+        ''')
+        cuota_total = cursor.fetchone()['cuota'] or 0
+
+        conn.close()
+
+        cumplimiento = (total_ventas / cuota_total * 100) if cuota_total > 0 else 0
+
+        logger.info('✅ Datos generales obtenidos')
+        return {
+            'total': total_ventas,
+            'clientes': cobertura,
+            'ticket': ticket,
+            'cuota': cuota_total,
+            'cumplimiento': cumplimiento,
+            'es_general': True
+        }
+
+    except Exception as e:
+        logger.error(f'❌ Error obteniendo datos generales: {e}')
+        return None
 
 
 def enviar_respuesta(numero_destino, mensaje):
@@ -258,8 +337,16 @@ def recibir():
 
         logger.info(f'✅ Vendedor válido: {nombre}')
 
-        # Obtener datos
-        ventas = obtener_datos_vendedor(nombre)
+        # Detectar si es Jefe de Ventas o Supervisor ARCOR
+        es_jefe = nombre.upper() in ['JEFE DE VENTAS', 'SUPERVISOR ARCOR']
+
+        if es_jefe:
+            logger.info('📊 Resumen GENERAL solicitado por Jefe/Supervisor')
+            # Obtener datos consolidados de TODOS los vendedores
+            ventas = obtener_datos_generales()
+        else:
+            # Obtener datos específicos del vendedor
+            ventas = obtener_datos_vendedor(nombre)
 
         if not ventas:
             logger.error('Sin datos de ventas')
