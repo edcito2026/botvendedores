@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🤖 BOT RESPONDER A VENDEDORES
+🤖 BOT RESPONDER A VENDEDORES - COPIA CORREGIDA
 Recibe "resumen" → Valida → Obtiene datos → Responde
-FIXED: Línea 54 min_row=2 → min_row=3 (salta encabezados del Excel)
+FIXED: min_row=3 (leer desde fila 3, evitar encabezados)
 """
 
 from flask import Flask, request, jsonify
@@ -14,7 +14,7 @@ import os
 import openpyxl
 from datetime import datetime
 
-# ===== CREDENCIALES (IGUAL A TEST_ENVIAR_JEFE_VENTAS.py) =====
+# ===== CREDENCIALES =====
 ACCESS_TOKEN = "EAAO1HSTvFqoBSND9HEaEJi4lKRKBhdU4YhAeiBSH2bu67zxZCvRPqTONojFdRjp112QBxObzZCE8Q2LaLhGV8aJY3kixWsS4fZAxrepU0lFinc7i3iOFCUTTc1GRPGKN8z7w8rC0lqvMZBsQZAodBSTsOCqZAHjjVlQnaI9pT7H9tDEnGFUJOBj5K3iU6aZBDFKzgZDZD"
 PHONE_NUMBER_ID = "1202656292939375"
 VERIFY_TOKEN = "tu_token_verificacion_seguro"
