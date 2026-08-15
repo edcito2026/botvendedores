@@ -4,7 +4,6 @@
 🔔 WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP
 Recibe mensajes de vendedores, valida su número, extrae ventas personalizadas
 y envía reporte dinámico por WhatsApp API
-FIXED: Índices Excel, palabra clave "resumen", min_row=3
 """
 
 from flask import Flask, request, jsonify
@@ -27,7 +26,7 @@ PALABRA_CLAVE = "resumen"
 
 # Rutas
 BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
-EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx'
+EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\VENDEDORES.xlsx'
 
 # Logging
 import os
@@ -55,18 +54,16 @@ def obtener_vendedores_autorizados():
         wb = openpyxl.load_workbook(EXCEL_VENDEDORES)
         ws = wb.active
 
-        # Estructura correcta del Excel:
-        # Fila 2: Encabezados (Código Vendedor | Nombre Vendedor | Teléfono | Clientes CALIF=D)
-        # Fila 3+: Datos (10 | ABDEL MARTIN... | 970507377 | 19)
-        for row in ws.iter_rows(min_row=3, values_only=True):
-            if row[2]:  # Teléfono en columna C (index 2)
-                telefono = str(row[2]).strip()
+        # Asumir: Columna A = Nombre, Columna B = Teléfono, Columna C = Código
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[1] and row[0]:  # Teléfono y Nombre
+                telefono = str(row[1]).strip()
                 # Normalizar teléfono: quitar espacios y caracteres especiales
                 telefono_limpio = ''.join(filter(str.isdigit, telefono))
 
                 vendedores[telefono_limpio] = {
-                    'nombre': row[1],  # Nombre en columna B (index 1)
-                    'codigo': row[0],  # Código en columna A (index 0)
+                    'nombre': row[0],
+                    'codigo': row[2] if len(row) > 2 else None,
                     'telefono': telefono_limpio
                 }
 
