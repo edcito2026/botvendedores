@@ -51,61 +51,62 @@ _EXCEL_LOCK = Lock()
 
 
 def cargar_vendedores():
-    """Carga y cachea los vendedores desde el Excel para evitar abrir el archivo en cada request."""
+    """Carga y cachea los vendedores desde el Excel para evitar abrir el archivo en cada request.
+    Normaliza teléfonos guardando sólo los últimos 9 dígitos (para Perú)."""
     try:
         if not os.path.exists(EXCEL_VENDEDORES):
             logger.warning(f'Archivo Excel no encontrado: {EXCEL_VENDEDORES}')
             return []
-
         mtime = os.path.getmtime(EXCEL_VENDEDORES)
         with _EXCEL_LOCK:
             if _EXCEL_CACHE['data'] is not None and _EXCEL_CACHE['mtime'] == mtime:
                 return _EXCEL_CACHE['data']
-
             wb = openpyxl.load_workbook(EXCEL_VENDEDORES, read_only=True, data_only=True)
             ws = wb.active
             vendedores = []
-
             for row in ws.iter_rows(min_row=3, values_only=True):
                 if not row:
                     continue
-                # Ajustar según columnas reales: se asumió que nombre está en índice 1 y teléfono en índice 2
-                nombre = row[1] if len(row) > 1 else None
-                tel = row[2] if len(row) > 2 else None
+                # Ajusta índices según tu archivo: aquí intento usar 0=name,1=telefono si es más común.
+                # Cambia si tu Excel tiene otra posición.
+                nombre = row[0] if len(row) > 0 else None
+                tel = row[1] if len(row) > 1 else None
                 if nombre and tel:
                     tel_clean = ''.join(filter(str.isdigit, str(tel)))
-                    vendedores.append({'nombre': nombre, 'telefono': tel_clean})
-
+                    # Obtener últimos 9 dígitos (número móvil peruano)
+                    tel_last9 = tel_clean[-9:] if len(tel_clean) >= 9 else tel_clean
+                    vendedores.append({'nombre': str(nombre).strip(), 'telefono': tel_last9})
             _EXCEL_CACHE['mtime'] = mtime
             _EXCEL_CACHE['data'] = vendedores
+            logger.debug(f'Vendedores cargados: {len(vendedores)}')
             return vendedores
-
     except Exception:
         logger.exception('Error cargando Excel')
         return []
 
-
-# ===== FUNCIONES =====
-
 def obtener_vendedor_de_excel(numero_telefono):
-    """Busca vendedor en Excel por teléfono (normaliza y compara sufijo)."""
+    """Busca vendedor en Excel por teléfono: compara por últimos 9 dígitos."""
     try:
         numero_limpio = ''.join(filter(str.isdigit, str(numero_telefono)))
-        if numero_limpio.startswith('51'):
-            numero_limpio = numero_limpio[2:]
-
+        numero_last9 = numero_limpio[-9:] if len(numero_limpio) >= 9 else numero_limpio
         vendedores = cargar_vendedores()
+        logger.debug(f'Buscando vendedor para número entrante: {numero_telefono} -> last9={numero_last9}')
+        logger.debug(f'Lista de teléfonos (last9) en Excel: {[v.get("telefono") for v in vendedores]}')
         for v in vendedores:
             tel = v.get('telefono', '')
-            if tel == numero_limpio or tel.endswith(numero_limpio):
+            if not tel:
+                continue
+            if tel == numero_last9 or tel.endswith(numero_last9):
+                logger.info(f'Vendedor encontrado: {v["nombre"]} para número {numero_telefono}')
                 return v.get('nombre')
-
+        logger.warning(f'No se encontró vendedor para número {numero_telefono}')
         return None
-
     except Exception:
         logger.exception('Error obteniendo vendedor desde Excel')
         return None
 
+
+# ===== FUNCIONES =====
 
 def obtener_datos_vendedor(nombre_vendedor):
     """Obtiene datos de ventas del vendedor"""
