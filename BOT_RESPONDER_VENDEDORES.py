@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+🤖 BOT RESPONDER A VENDEDORES
+Recibe "Avance de ventas" → Valida → Obtiene datos → Responde
+"""
+
+from flask import Flask, request, jsonify
+import sqlite3
+import requests
+import logging
+import os
+import openpyxl
+from datetime import datetime
+
+# ===== CREDENCIALES (IGUAL A TEST_ENVIAR_JEFE_VENTAS.py) =====
+ACCESS_TOKEN = "EAAO1HSTvFqoBSND9HEaEJi4lKRKBhdU4YhAeiBSH2bu67zxZCvRPqTONojFdRjp112QBxObzZCE8Q2LaLhGV8aJY3kixWsS4fZAxrepU0lFinc7i3iOFCUTTc1GRPGKN8z7w8rC0lqvMZBsQZAodBSTsOCqZAHjjVlQnaI9pT7H9tDEnGFUJOBj5K3iU6aZBDFKzgZDZD"
+PHONE_NUMBER_ID = "1202656292939375"
+VERIFY_TOKEN = "tu_token_verificacion_seguro"
+API_VERSION = "v18.0"
+API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
+
+# ===== RUTAS =====
+BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
+EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\VENDEDORES.xlsx'
+
+# ===== LOGGING =====
+os.makedirs('logs', exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/bot_responder.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+
+
+# ===== FUNCIONES =====
+
+def obtener_vendedor_de_excel(numero_telefono):
+    """Busca vendedor en Excel por teléfono"""
+    try:
+        numero_limpio = ''.join(filter(str.isdigit, numero_telefono))
+        if numero_limpio.startswith('51'):
+            numero_limpio = numero_limpio[2:]
+
+        wb = openpyxl.load_workbook(EXCEL_VENDEDORES)
+        ws = wb.active
+
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[1]:
+                tel = ''.join(filter(str.isdigit, str(row[1])))
+                if tel == numero_limpio or tel.endswith(numero_limpio):
+                    return row[0]  # Retorna nombre vendedor
+
+        return None
+
+    except Exception as e:
+        logger.error(f'Error Excel: {e}')
+        return None
+
+
+def obtener_datos_vendedor(nombre_vendedor):
+    """Obtiene datos de ventas del vendedor"""
+    try:
+        conn = sqlite3.connect(BD_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Ventas ARCOR
+        cursor.execute('''
+            SELECT
+                ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total_ventas,
+                COUNT(DISTINCT Cod_Clie) as clientes,
+                COUNT(DISTINCT Documento) as documentos
+            FROM VENTAS2026
+            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR"
+        ''', (nombre_vendedor,))
+
+        venta_data = cursor.fetchone()
+        if not venta_data:
+            conn.close()
+            return None
+
+        ventas = {
+            'total': venta_data['total_ventas'] or 0,
+            'clientes': venta_data['clientes'] or 0,
+            'documentos': venta_data['documentos'] or 0
+        }
+
+        # Ticket promedio
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket
+            FROM VENTAS2026
+            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR"
+        ''', (nombre_vendedor,))
+
+        ticket = cursor.fetchone()
+        ventas['ticket'] = ticket['ticket'] or 0
+
+        # Cuota
+        cursor.execute('''
+            SELECT Cuota_Soles
+            FROM cuotas
+            WHERE Vendedor = ? AND AÑO = 2026 AND NRO_MES = 8 AND Proveedor = "ARCOR"
+            LIMIT 1
+        ''', (nombre_vendedor,))
+
+        cuota_data = cursor.fetchone()
+        ventas['cuota'] = cuota_data['Cuota_Soles'] if cuota_data else 0
+
+        # Cumplimiento
+        ventas['cumplimiento'] = (ventas['total'] / ventas['cuota'] * 100) if ventas['cuota'] > 0 else 0
+
+        # Días restantes
+        cursor.execute('''
+            WITH RECURSIVE dates AS (
+              SELECT DATE('2026-08-01') as fecha
+              UNION ALL
+              SELECT DATE(fecha, '+1 day') FROM dates
+              WHERE fecha <= DATE('now')
+            )
+            SELECT COUNT(*) as dias FROM dates
+            WHERE CAST(strftime('%w', fecha) AS INTEGER) IN (1,2,3,4,5,6)
+        ''')
+
+        dias_data = cursor.fetchone()
+        dias_transcurridos = dias_data['dias'] or 1
+        dias_restantes = 26 - dias_transcurridos
+
+        ventas['dias_restantes'] = dias_restantes
+        ventas['proyeccion'] = round(ventas['total'] + ((ventas['total'] / dias_transcurridos) * dias_restantes), 2)
+
+        conn.close()
+        return ventas
+
+    except Exception as e:
+        logger.error(f'Error BD: {e}')
+        return None
+
+
+def generar_respuesta(nombre, ventas):
+    """Genera mensaje de respuesta"""
+    return f"""📊 REPORTE PERSONAL - AGOSTO
+{datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+👤 {nombre}
+
+TU DESEMPEÑO:
+Ventas: S/. {ventas['total']:,.2f}
+Cuota: S/. {ventas['cuota']:,.2f}
+Cumplimiento: {ventas['cumplimiento']:.1f}%
+
+ESTADÍSTICAS:
+Clientes: {ventas['clientes']}
+Documentos: {ventas['documentos']}
+Ticket: S/. {ventas['ticket']:,.2f}
+
+PROYECCIÓN:
+Venta Final: S/. {ventas['proyeccion']:,.2f}
+Cumpl. Final: {(ventas['proyeccion']/ventas['cuota']*100):.1f}%
+
+Días Pendientes: {ventas['dias_restantes']}
+
+Sistema N&J"""
+
+
+def enviar_respuesta(numero_destino, mensaje):
+    """Envía mensaje por WhatsApp API"""
+    try:
+        numero = numero_destino.replace('+', '').replace(' ', '')
+        if not numero.startswith('51'):
+            numero = f"51{numero}"
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": numero,
+            "type": "text",
+            "text": {"body": mensaje}
+        }
+
+        headers = {
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post(API_URL, json=payload, headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            logger.info(f'✅ Respuesta enviada a {numero}')
+            return True
+        else:
+            logger.error(f'Error: {response.status_code} - {response.text}')
+            return False
+
+    except Exception as e:
+        logger.error(f'Error enviando: {e}')
+        return False
+
+
+# ===== WEBHOOK =====
+
+@app.route('/webhook', methods=['GET'])
+def verificar():
+    """Verifica webhook con Meta"""
+    verify_token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if verify_token == VERIFY_TOKEN:
+        logger.info('✅ Webhook verificado')
+        return challenge
+    return "Unauthorized", 403
+
+
+@app.route('/webhook', methods=['POST'])
+def recibir():
+    """Recibe y responde a mensajes"""
+    try:
+        data = request.get_json()
+        logger.info(f'Mensaje recibido')
+
+        if 'entry' not in data or not data['entry']:
+            return jsonify({"status": "ok"}), 200
+
+        entrada = data['entry'][0]
+        if 'changes' not in entrada:
+            return jsonify({"status": "ok"}), 200
+
+        cambio = entrada['changes'][0]['value']
+
+        if 'messages' not in cambio:
+            return jsonify({"status": "ok"}), 200
+
+        mensaje_obj = cambio['messages'][0]
+        numero_remitente = mensaje_obj['from']
+        texto_mensaje = mensaje_obj['text']['body'].strip()
+
+        logger.info(f'De: {numero_remitente} | Mensaje: "{texto_mensaje}"')
+
+        # Verificar palabra clave
+        if "Avance de ventas" not in texto_mensaje:
+            logger.info('Palabra clave no encontrada')
+            return jsonify({"status": "ok"}), 200
+
+        logger.info('✅ Palabra clave detectada')
+
+        # Validar vendedor
+        nombre = obtener_vendedor_de_excel(numero_remitente)
+
+        if not nombre:
+            logger.warning(f'Número no autorizado: {numero_remitente}')
+            enviar_respuesta(numero_remitente, "❌ Número no autorizado")
+            return jsonify({"status": "unauthorized"}), 403
+
+        logger.info(f'✅ Vendedor válido: {nombre}')
+
+        # Obtener datos
+        ventas = obtener_datos_vendedor(nombre)
+
+        if not ventas:
+            logger.error('Sin datos de ventas')
+            enviar_respuesta(numero_remitente, "⚠️ Sin datos disponibles")
+            return jsonify({"status": "no_data"}), 404
+
+        logger.info(f'✅ Datos obtenidos')
+
+        # Generar y enviar respuesta
+        mensaje = generar_respuesta(nombre, ventas)
+
+        if enviar_respuesta(numero_remitente, mensaje):
+            logger.info(f'✅ Reporte enviado a {nombre}')
+            return jsonify({"status": "success"}), 200
+        else:
+            logger.error('Error enviando respuesta')
+            return jsonify({"status": "send_error"}), 500
+
+    except Exception as e:
+        logger.error(f'Error: {e}')
+        return jsonify({"status": "error"}), 500
+
+
+if __name__ == '__main__':
+    logger.info('='*60)
+    logger.info('🤖 BOT RESPONDER VENDEDORES INICIANDO')
+    logger.info('='*60)
+    logger.info(f'Escuchando: http://localhost:5000/webhook')
+    logger.info(f'Palabra clave: "Avance de ventas"')
+    logger.info('='*60 + '\n')
+
+    app.run(host='0.0.0.0', port=5000, debug=True)
