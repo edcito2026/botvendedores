@@ -148,19 +148,45 @@ def generar_respuesta(nombre, ventas):
 
     # Si es reporte general para Jefe/Supervisor
     if ventas.get('es_general'):
-        return f"""📊 RESUMEN GENERAL ARCOR - AGOSTO
+        kpis = obtener_kpis_completos()
+        if not kpis:
+            return "❌ Error obteniendo datos"
+
+        # Construir categorías con emojis
+        categorias_emojis = {
+            'GOLOSINAS': '🍬',
+            'CHOCOLATES': '🍫',
+            'CHICLES': '💫',
+            'GALLETAS': '🍪',
+            'ALIMENTOS': '🥫'
+        }
+
+        categorias_texto = ""
+        for idx, cat in enumerate(kpis.get('categorias', []), 1):
+            emoji = categorias_emojis.get(cat['Lin_Neg'], '')
+            if emoji:
+                categorias_texto += f"\n{emoji} {cat['Lin_Neg']} - S/. {cat['venta_linea']:,.2f} ({cat['pct_participacion']:.1f}%)"
+            else:
+                categorias_texto += f"\n{cat['Lin_Neg']} - S/. {cat['venta_linea']:,.2f} ({cat['pct_participacion']:.1f}%)"
+
+        return f"""📊 REPORTE ARCOR - AGOSTO
 {datetime.now().strftime("%d/%m/%Y %H:%M")}
 
-👥 Consolidado del Equipo
+RESULTADOS ACTUALES:
+Ventas: S/. {kpis['kpi_ventas']:,.2f}
+Cobertura: {kpis['cobertura_actual']} clientes
+Ticket Promedio: S/. {kpis['ticket_promedio']:,.2f}
+TROYA: S/. {kpis['troya_venta']:,.2f} ({kpis['troya_pct']:.1f}%)
 
-DESEMPEÑO GENERAL:
-Ventas Totales: S/. {ventas['total']:,.2f}
-Cuota Total: S/. {ventas['cuota']:,.2f}
-Cumplimiento: {ventas['cumplimiento']:.1f}%
+LÍNEAS DE NEGOCIO:{categorias_texto}
 
-COBERTURA:
-Clientes: {ventas['clientes']}
-Ticket Promedio: S/. {ventas['ticket']:,.2f}
+PROYECCIÓN AL 31/AGOSTO:
+Ventas: S/. {kpis['proyeccion_ventas']:,.2f}
+Cobertura: {kpis['cobertura_proyectada']} clientes
+
+CUMPLIMIENTO: {kpis['pct_cumplimiento']:.1f}%
+
+PENDIENTE: {kpis['dias_restantes']} días hábiles
 
 Sistema Automatizado N&J"""
 
@@ -187,6 +213,92 @@ Cumpl. Final: {(ventas['proyeccion']/ventas['cuota']*100):.1f}%
 Días Pendientes: {ventas['dias_restantes']}
 
 Sistema N&J"""
+
+
+def obtener_kpis_completos():
+    """Obtiene todos los KPIs completos para Jefe/Supervisor"""
+    try:
+        logger.info('🔄 Obteniendo KPIs completos ARCOR...')
+        conn = sqlite3.connect(BD_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # 1. KPI VENTAS TOTAL ARCOR
+        cursor.execute('SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total FROM VENTAS2026 WHERE Periodo = "202608" AND Proveedor = "ARCOR"')
+        kpi_ventas = cursor.fetchone()['total'] or 0
+
+        # 2. COBERTURA ACTUAL ARCOR
+        cursor.execute('SELECT COUNT(DISTINCT Cod_Clie) as total FROM VENTAS2026 WHERE Periodo = "202608" AND Proveedor = "ARCOR"')
+        cobertura_actual = cursor.fetchone()['total'] or 0
+
+        # 3. TICKET PROMEDIO ARCOR
+        cursor.execute('SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket FROM VENTAS2026 WHERE Periodo = "202608" AND Proveedor = "ARCOR"')
+        ticket_promedio = cursor.fetchone()['ticket'] or 0
+
+        # 4. TROYA (Calif=D) ARCOR
+        cursor.execute('SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as troya_venta FROM VENTAS2026 WHERE Periodo = "202608" AND Calif = "D" AND Proveedor = "ARCOR"')
+        troya_venta = cursor.fetchone()['troya_venta'] or 0
+        troya_pct = (troya_venta / kpi_ventas * 100) if kpi_ventas > 0 else 0
+
+        # 5. CATEGORÍAS POR LÍN_NEG ARCOR
+        cursor.execute('''
+            SELECT Lin_Neg, ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as venta_linea
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Lin_Neg != "MATERIAL POP" AND Proveedor = "ARCOR"
+            GROUP BY Lin_Neg
+            ORDER BY venta_linea DESC
+        ''')
+        categorias = []
+        total_lineas = 0
+        for row in cursor.fetchall():
+            categorias.append(dict(row))
+            total_lineas += row['venta_linea']
+
+        for cat in categorias:
+            cat['pct_participacion'] = (cat['venta_linea'] / total_lineas * 100) if total_lineas > 0 else 0
+
+        # 6. DÍAS HÁBILES TRANSCURRIDOS
+        cursor.execute('''
+            WITH RECURSIVE dates AS (
+              SELECT DATE('2026-08-01') as fecha
+              UNION ALL
+              SELECT DATE(fecha, '+1 day') FROM dates
+              WHERE fecha <= DATE('now')
+            )
+            SELECT COUNT(*) as dias FROM dates
+            WHERE CAST(strftime('%w', fecha) AS INTEGER) IN (1,2,3,4,5,6)
+        ''')
+        dias_transcurridos = cursor.fetchone()['dias'] or 1
+
+        # 7. PROYECCIONES
+        total_dias_habiles = 26
+        dias_restantes = total_dias_habiles - dias_transcurridos
+        proyeccion_cobertura = round((cobertura_actual / dias_transcurridos) * total_dias_habiles) if dias_transcurridos > 0 else 0
+        proyeccion_ventas = round(kpi_ventas + ((kpi_ventas / dias_transcurridos) * dias_restantes), 2) if dias_transcurridos > 0 else 0
+
+        # 8. % CUMPLIMIENTO ARCOR
+        cursor.execute('SELECT ROUND(SUM(Cuota_Soles), 2) as cuota_total FROM cuotas WHERE AÑO = 2026 AND NRO_MES = 8 AND Proveedor = "ARCOR"')
+        cuota_total = cursor.fetchone()['cuota_total'] or 1
+        pct_cumplimiento = (proyeccion_ventas / cuota_total * 100) if cuota_total > 0 else 0
+
+        conn.close()
+
+        return {
+            'kpi_ventas': kpi_ventas,
+            'cobertura_actual': cobertura_actual,
+            'cobertura_proyectada': proyeccion_cobertura,
+            'ticket_promedio': ticket_promedio,
+            'troya_venta': troya_venta,
+            'troya_pct': troya_pct,
+            'categorias': categorias,
+            'proyeccion_ventas': proyeccion_ventas,
+            'pct_cumplimiento': pct_cumplimiento,
+            'dias_restantes': dias_restantes
+        }
+
+    except Exception as e:
+        logger.error(f'❌ Error obteniendo KPIs: {e}')
+        return None
 
 
 def obtener_datos_generales():
