@@ -26,6 +26,18 @@ API_VERSION = os.environ.get('WHATSAPP_API_VERSION', 'v18.0')
 BD_PATH = os.environ.get('BD_PATH', 'ventas.db')
 EXCEL_VENDEDORES = os.environ.get('EXCEL_VENDEDORES', 'vendedores.xlsx')
 
+# Column configuration for vendedores.xlsx (0-based indices)
+VEN_COL_NOMBRE = int(os.environ.get('VEN_COL_NOMBRE', '0'))  # columna A por defecto
+VEN_COL_TELEFONO = int(os.environ.get('VEN_COL_TELEFONO', '1'))  # columna B por defecto
+VEN_START_ROW = int(os.environ.get('VEN_START_ROW', '1'))  # fila inicial (1-based)
+
+# Logging level configurable via env (DEBUG/INFO/WARNING/ERROR)
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
+try:
+    log_level = getattr(logging, LOG_LEVEL)
+except Exception:
+    log_level = logging.INFO
+
 if PHONE_NUMBER_ID:
     API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 else:
@@ -34,7 +46,7 @@ else:
 # ===== LOGGING =====
 os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('logs/bot_responder.log', encoding='utf-8'),
@@ -53,8 +65,8 @@ _EXCEL_LOCK = Lock()
 def cargar_vendedores():
     """Carga y cachea los vendedores desde el Excel para evitar abrir el archivo en cada request.
     Normaliza teléfonos guardando sólo los últimos 9 dígitos (para Perú).
-    Asume: Nombre en columna A, Teléfono en columna B. Si tu archivo es distinto, ajusta EXCEL_VENDEDORES
-    o pide que haga el cambio."""
+    Usa VEN_COL_NOMBRE y VEN_COL_TELEFONO (0-based) y VEN_START_ROW (1-based).
+    """
     try:
         if not os.path.exists(EXCEL_VENDEDORES):
             logger.warning(f'Archivo Excel no encontrado: {EXCEL_VENDEDORES}')
@@ -69,16 +81,14 @@ def cargar_vendedores():
             ws = wb.active
             vendedores = []
 
-            # Ajustado: min_row=1 porque en tu archivo los datos comienzan desde la fila 1 (sin encabezado)
-            for row in ws.iter_rows(min_row=1, values_only=True):
+            # openpyxl iter_rows min_row expects 1-based indexing
+            for row in ws.iter_rows(min_row=VEN_START_ROW, values_only=True):
                 if not row:
                     continue
-                # Asumimos nombre en columna A (row[0]) y teléfono en columna B (row[1])
-                nombre = row[0] if len(row) > 0 else None
-                tel = row[1] if len(row) > 1 else None
+                nombre = row[VEN_COL_NOMBRE] if len(row) > VEN_COL_NOMBRE else None
+                tel = row[VEN_COL_TELEFONO] if len(row) > VEN_COL_TELEFONO else None
                 if nombre and tel:
                     tel_clean = ''.join(filter(str.isdigit, str(tel)))
-                    # Guardar sólo últimos 9 dígitos (móvil peruano)
                     tel_last9 = tel_clean[-9:] if len(tel_clean) >= 9 else tel_clean
                     vendedores.append({'nombre': str(nombre).strip(), 'telefono': tel_last9})
 
