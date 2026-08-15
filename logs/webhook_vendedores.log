@@ -24,3 +24,55 @@
 
 2026-08-15 12:39:33,032 - WARNING -  * Debugger is active!
 2026-08-15 12:39:33,036 - INFO -  * Debugger PIN: 127-441-620
+2026-08-15 13:50:54,023 - INFO - ======================================================================
+2026-08-15 13:50:54,024 - INFO - 🚀 SERVIDOR WEBHOOK WHATSAPP INICIANDO
+2026-08-15 13:50:54,026 - INFO - ======================================================================
+2026-08-15 13:50:54,026 - INFO - Escuchando en: http://localhost:5000/webhook
+2026-08-15 13:50:54,026 - INFO - Palabra clave: "resumen"
+2026-08-15 13:50:54,026 - INFO - BD: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db
+2026-08-15 13:50:54,026 - INFO - Excel vendedores: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx
+2026-08-15 13:50:54,026 - INFO - ======================================================================
+
+2026-08-15 13:50:54,086 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-08-15 13:50:54,086 - INFO - [33mPress CTRL+C to quit[0m
+2026-08-15 13:50:54,090 - INFO -  * Restarting with stat
+2026-08-15 13:50:54,800 - INFO - ======================================================================
+2026-08-15 13:50:54,800 - INFO - 🚀 SERVIDOR WEBHOOK WHATSAPP INICIANDO
+2026-08-15 13:50:54,800 - INFO - ======================================================================
+2026-08-15 13:50:54,800 - INFO - Escuchando en: http://localhost:5000/webhook
+2026-08-15 13:50:54,800 - INFO - Palabra clave: "resumen"
+2026-08-15 13:50:54,800 - INFO - BD: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db
+2026-08-15 13:50:54,800 - INFO - Excel vendedores: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx
+2026-08-15 13:50:54,801 - INFO - ======================================================================
+
+2026-08-15 13:50:54,838 - WARNING -  * Debugger is active!
+2026-08-15 13:50:54,842 - INFO -  * Debugger PIN: 127-441-620
+2026-08-15 18:00:46,714 - INFO - ======================================================================
+2026-08-15 18:00:46,714 - INFO - 🚀 SERVIDOR WEBHOOK WHATSAPP INICIANDO
+2026-08-15 18:00:46,716 - INFO - ======================================================================
+2026-08-15 18:00:46,716 - INFO - Escuchando en: http://localhost:5000/webhook
+2026-08-15 18:00:46,716 - INFO - Palabra clave: "resumen"
+2026-08-15 18:00:46,716 - INFO - BD: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db
+2026-08-15 18:00:46,716 - INFO - Excel vendedores: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx
+2026-08-15 18:00:46,716 - INFO - ======================================================================
+
+2026-08-15 18:00:46,774 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-08-15 18:00:46,774 - INFO - [33mPress CTRL+C to quit[0m
+2026-08-15 18:00:46,778 - INFO -  * Restarting with stat
+2026-08-15 18:00:47,430 - INFO - ======================================================================
+2026-08-15 18:00:47,430 - INFO - 🚀 SERVIDOR WEBHOOK WHATSAPP INICIANDO
+2026-08-15 18:00:47,430 - INFO - ======================================================================
+2026-08-15 18:00:47,431 - INFO - Escuchando en: http://localhost:5000/webhook
+2026-08-15 18:00:47,431 - INFO - Palabra clave: "resumen"
+2026-08-15 18:00:47,431 - INFO - BD: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db
+2026-08-15 18:00:47,431 - INFO - Excel vendedores: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\vendedores.xlsx
+2026-08-15 18:00:47,431 - INFO - ======================================================================
+
+2026-08-15 18:00:47,464 - WARNING -  * Debugger is active!
+2026-08-15 18:00:47,468 - INFO -  * Debugger PIN: 127-441-620

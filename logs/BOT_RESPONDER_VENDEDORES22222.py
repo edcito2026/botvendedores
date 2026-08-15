@@ -3,8 +3,6 @@
 """
 🤖 BOT RESPONDER A VENDEDORES
 Recibe "resumen" → Valida → Obtiene datos → Responde
-Mejoras: uso de variables de entorno, manejo robusto de webhook, cache simple para Excel,
-mejor logging (logger.exception), uso de response.ok, quitar debug=True en app.run.
 """
 
 from flask import Flask, request, jsonify
@@ -14,39 +12,22 @@ import logging
 import os
 import openpyxl
 from datetime import datetime
-from threading import Lock
 
-# ===== CONFIG / CREDENCIALES (leer desde variables de entorno) =====
-ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
-PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
-VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN')
-API_VERSION = os.environ.get('WHATSAPP_API_VERSION', 'v18.0')
+# ===== CREDENCIALES (IGUAL A TEST_ENVIAR_JEFE_VENTAS.py) =====
+ACCESS_TOKEN = "EAAO1HSTvFqoBSND9HEaEJi4lKRKBhdU4YhAeiBSH2bu67zxZCvRPqTONojFdRjp112QBxObzZCE8Q2LaLhGV8aJY3kixWsS4fZAxrepU0lFinc7i3iOFCUTTc1GRPGKN8z7w8rC0lqvMZBsQZAodBSTsOCqZAHjjVlQnaI9pT7H9tDEnGFUJOBj5K3iU6aZBDFKzgZDZD"
+PHONE_NUMBER_ID = "1202656292939375"
+VERIFY_TOKEN = "tu_token_verificacion_seguro"
+API_VERSION = "v18.0"
+API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 
-# Rutas / recursos (también configurables)
-BD_PATH = os.environ.get('BD_PATH', 'ventas.db')
-EXCEL_VENDEDORES = os.environ.get('EXCEL_VENDEDORES', 'vendedores.xlsx')
-
-# Column configuration for vendedores.xlsx (0-based indices)
-VEN_COL_NOMBRE = int(os.environ.get('VEN_COL_NOMBRE', '0'))  # columna A por defecto
-VEN_COL_TELEFONO = int(os.environ.get('VEN_COL_TELEFONO', '1'))  # columna B por defecto
-VEN_START_ROW = int(os.environ.get('VEN_START_ROW', '1'))  # fila inicial (1-based)
-
-# Logging level configurable via env (DEBUG/INFO/WARNING/ERROR)
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
-try:
-    log_level = getattr(logging, LOG_LEVEL)
-except Exception:
-    log_level = logging.INFO
-
-if PHONE_NUMBER_ID:
-    API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
-else:
-    API_URL = None
+# ===== RUTAS =====
+BD_PATH = 'ventas.db'
+EXCEL_VENDEDORES = 'vendedores.xlsx'
 
 # ===== LOGGING =====
 os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
-    level=log_level,
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('logs/bot_responder.log', encoding='utf-8'),
@@ -57,77 +38,29 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# ===== Excel cache (simple) =====
-_EXCEL_CACHE = {'mtime': None, 'data': None}
-_EXCEL_LOCK = Lock()
-
-
-def cargar_vendedores():
-    """Carga y cachea los vendedores desde el Excel para evitar abrir el archivo en cada request.
-    Normaliza teléfonos guardando sólo los últimos 9 dígitos (para Perú).
-    Usa VEN_COL_NOMBRE y VEN_COL_TELEFONO (0-based) y VEN_START_ROW (1-based).
-    """
-    try:
-        if not os.path.exists(EXCEL_VENDEDORES):
-            logger.warning(f'Archivo Excel no encontrado: {EXCEL_VENDEDORES}')
-            return []
-
-        mtime = os.path.getmtime(EXCEL_VENDEDORES)
-        with _EXCEL_LOCK:
-            if _EXCEL_CACHE['data'] is not None and _EXCEL_CACHE['mtime'] == mtime:
-                return _EXCEL_CACHE['data']
-
-            wb = openpyxl.load_workbook(EXCEL_VENDEDORES, read_only=True, data_only=True)
-            ws = wb.active
-            vendedores = []
-
-            # openpyxl iter_rows min_row expects 1-based indexing
-            for row in ws.iter_rows(min_row=VEN_START_ROW, values_only=True):
-                if not row:
-                    continue
-                nombre = row[VEN_COL_NOMBRE] if len(row) > VEN_COL_NOMBRE else None
-                tel = row[VEN_COL_TELEFONO] if len(row) > VEN_COL_TELEFONO else None
-                if nombre and tel:
-                    tel_clean = ''.join(filter(str.isdigit, str(tel)))
-                    tel_last9 = tel_clean[-9:] if len(tel_clean) >= 9 else tel_clean
-                    vendedores.append({'nombre': str(nombre).strip(), 'telefono': tel_last9})
-
-            _EXCEL_CACHE['mtime'] = mtime
-            _EXCEL_CACHE['data'] = vendedores
-            logger.debug(f'Vendedores cargados: {len(vendedores)}')
-            return vendedores
-
-    except Exception:
-        logger.exception('Error cargando Excel')
-        return []
-
 
 # ===== FUNCIONES =====
 
-
 def obtener_vendedor_de_excel(numero_telefono):
-    """Busca vendedor en Excel por teléfono: compara por últimos 9 dígitos."""
+    """Busca vendedor en Excel por teléfono"""
     try:
-        numero_limpio = ''.join(filter(str.isdigit, str(numero_telefono)))
-        numero_last9 = numero_limpio[-9:] if len(numero_limpio) >= 9 else numero_limpio
+        numero_limpio = ''.join(filter(str.isdigit, numero_telefono))
+        if numero_limpio.startswith('51'):
+            numero_limpio = numero_limpio[2:]
 
-        vendedores = cargar_vendedores()
-        logger.debug(f'Buscando vendedor para número entrante: {numero_telefono} -> last9={numero_last9}')
-        logger.debug(f'Lista de teléfonos (last9) en Excel: {[v.get("telefono") for v in vendedores]}')
+        wb = openpyxl.load_workbook(EXCEL_VENDEDORES)
+        ws = wb.active
 
-        for v in vendedores:
-            tel = v.get('telefono', '')
-            if not tel:
-                continue
-            if tel == numero_last9 or tel.endswith(numero_last9):
-                logger.info(f'Vendedor encontrado: {v["nombre"]} para número {numero_telefono}')
-                return v.get('nombre')
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[2]:
+                tel = ''.join(filter(str.isdigit, str(row[2])))
+                if tel == numero_limpio or tel.endswith(numero_limpio):
+                    return row[1]  # Retorna nombre vendedor
 
-        logger.warning(f'No se encontró vendedor para número {numero_telefono}')
         return None
 
-    except Exception:
-        logger.exception('Error obteniendo vendedor desde Excel')
+    except Exception as e:
+        logger.error(f'Error Excel: {e}')
         return None
 
 
@@ -178,35 +111,35 @@ def obtener_datos_vendedor(nombre_vendedor):
         ''', (nombre_vendedor,))
 
         cuota_data = cursor.fetchone()
-        ventas['cuota'] = cuota_data['Cuota_Soles'] if cuota_data and 'Cuota_Soles' in cuota_data.keys() else 0
+        ventas['cuota'] = cuota_data['Cuota_Soles'] if cuota_data else 0
 
         # Cumplimiento
         ventas['cumplimiento'] = (ventas['total'] / ventas['cuota'] * 100) if ventas['cuota'] > 0 else 0
 
-        # Días restantes (se mantiene lógica original, revisar si debe excluir sábados)
+        # Días restantes
         cursor.execute('''
             WITH RECURSIVE dates AS (
-                SELECT DATE('2026-08-01') as fecha
-                UNION ALL
-                SELECT DATE(fecha, '+1 day') FROM dates
-                WHERE fecha <= DATE('now')
+              SELECT DATE('2026-08-01') as fecha
+              UNION ALL
+              SELECT DATE(fecha, '+1 day') FROM dates
+              WHERE fecha <= DATE('now')
             )
             SELECT COUNT(*) as dias FROM dates
             WHERE CAST(strftime('%w', fecha) AS INTEGER) IN (1,2,3,4,5,6)
         ''')
+
         dias_data = cursor.fetchone()
         dias_transcurridos = dias_data['dias'] or 1
-        total_dias_habiles = 26
-        dias_restantes = total_dias_habiles - dias_transcurridos
+        dias_restantes = 26 - dias_transcurridos
 
         ventas['dias_restantes'] = dias_restantes
-        ventas['proyeccion'] = round(ventas['total'] + ((ventas['total'] / dias_transcurridos) * dias_restantes), 2) if dias_transcurridos > 0 else ventas['total']
+        ventas['proyeccion'] = round(ventas['total'] + ((ventas['total'] / dias_transcurridos) * dias_restantes), 2)
 
         conn.close()
         return ventas
 
-    except Exception:
-        logger.exception('Error consultando BD para vendedor')
+    except Exception as e:
+        logger.error(f'Error BD: {e}')
         return None
 
 
@@ -230,7 +163,7 @@ def generar_respuesta(nombre, ventas):
 
         categorias_texto = ""
         for idx, cat in enumerate(kpis.get('categorias', []), 1):
-            emoji = categorias_emojis.get(cat.get('Lin_Neg', ''), '')
+            emoji = categorias_emojis.get(cat['Lin_Neg'], '')
             if emoji:
                 categorias_texto += f"\n{emoji} {cat['Lin_Neg']} - S/. {cat['venta_linea']:,.2f} ({cat['pct_participacion']:.1f}%)"
             else:
@@ -281,6 +214,7 @@ Días Pendientes: {ventas['dias_restantes']}
 
 Sistema N&J"""
 
+
 def obtener_kpis_completos():
     """Obtiene todos los KPIs completos para Jefe/Supervisor"""
     try:
@@ -326,10 +260,10 @@ def obtener_kpis_completos():
         # 6. DÍAS HÁBILES TRANSCURRIDOS
         cursor.execute('''
             WITH RECURSIVE dates AS (
-                SELECT DATE('2026-08-01') as fecha
-                UNION ALL
-                SELECT DATE(fecha, '+1 day') FROM dates
-                WHERE fecha <= DATE('now')
+              SELECT DATE('2026-08-01') as fecha
+              UNION ALL
+              SELECT DATE(fecha, '+1 day') FROM dates
+              WHERE fecha <= DATE('now')
             )
             SELECT COUNT(*) as dias FROM dates
             WHERE CAST(strftime('%w', fecha) AS INTEGER) IN (1,2,3,4,5,6)
@@ -362,8 +296,8 @@ def obtener_kpis_completos():
             'dias_restantes': dias_restantes
         }
 
-    except Exception:
-        logger.exception('❌ Error obteniendo KPIs')
+    except Exception as e:
+        logger.error(f'❌ Error obteniendo KPIs: {e}')
         return None
 
 
@@ -421,19 +355,15 @@ def obtener_datos_generales():
             'es_general': True
         }
 
-    except Exception:
-        logger.exception('❌ Error obteniendo datos generales')
+    except Exception as e:
+        logger.error(f'❌ Error obteniendo datos generales: {e}')
         return None
 
 
 def enviar_respuesta(numero_destino, mensaje):
     """Envía mensaje por WhatsApp API"""
     try:
-        if not ACCESS_TOKEN or not API_URL:
-            logger.error('ACCESS_TOKEN o API_URL no configurados. Setea las variables de entorno correspondientes.')
-            return False
-
-        numero = str(numero_destino).replace('+', '').replace(' ', '')
+        numero = numero_destino.replace('+', '').replace(' ', '')
         if not numero.startswith('51'):
             numero = f"51{numero}"
 
@@ -451,15 +381,15 @@ def enviar_respuesta(numero_destino, mensaje):
 
         response = requests.post(API_URL, json=payload, headers=headers, timeout=10)
 
-        if response.ok:
+        if response.status_code == 200:
             logger.info(f'✅ Respuesta enviada a {numero}')
             return True
         else:
-            logger.error(f'Error enviando ({response.status_code}): {response.text}')
+            logger.error(f'Error: {response.status_code} - {response.text}')
             return False
 
-    except Exception:
-        logger.exception('Error enviando respuesta')
+    except Exception as e:
+        logger.error(f'Error enviando: {e}')
         return False
 
 
@@ -471,10 +401,9 @@ def verificar():
     verify_token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    if VERIFY_TOKEN and verify_token == VERIFY_TOKEN:
+    if verify_token == VERIFY_TOKEN:
         logger.info('✅ Webhook verificado')
         return challenge
-    logger.warning('Webhook verificación fallida')
     return "Unauthorized", 403
 
 
@@ -482,35 +411,25 @@ def verificar():
 def recibir():
     """Recibe y responde a mensajes"""
     try:
-        data = request.get_json(force=True, silent=True)
-        logger.info('Mensaje recibido')
+        data = request.get_json()
+        logger.info(f'Mensaje recibido')
 
-        if not data:
-            logger.warning('Payload vacío o inválido')
+        if 'entry' not in data or not data['entry']:
             return jsonify({"status": "ok"}), 200
 
-        entry = data.get('entry') or []
-        if not entry:
+        entrada = data['entry'][0]
+        if 'changes' not in entrada:
             return jsonify({"status": "ok"}), 200
 
-        cambios = entry[0].get('changes') or []
-        if not cambios:
+        cambio = entrada['changes'][0]['value']
+
+        if 'messages' not in cambio:
             return jsonify({"status": "ok"}), 200
 
-        cambio = cambios[0].get('value') or {}
-        messages = cambio.get('messages') or []
-        if not messages:
-            return jsonify({"status": "ok"}), 200
+        mensaje_obj = cambio['messages'][0]
+        numero_remitente = mensaje_obj['from']
+        texto_mensaje = mensaje_obj['text']['body'].strip()
 
-        mensaje_obj = messages[0]
-        numero_remitente = mensaje_obj.get('from')
-        texto_mensaje = (mensaje_obj.get('text') or {}).get('body', '')
-
-        if not numero_remitente or not texto_mensaje:
-            logger.info('Mensaje sin texto o sin remitente')
-            return jsonify({"status": "ok"}), 200
-
-        texto_mensaje = texto_mensaje.strip()
         logger.info(f'De: {numero_remitente} | Mensaje: "{texto_mensaje}"')
 
         # Verificar palabra clave
@@ -531,12 +450,14 @@ def recibir():
         logger.info(f'✅ Vendedor válido: {nombre}')
 
         # Detectar si es Jefe de Ventas o Supervisor ARCOR
-        es_jefe = str(nombre).upper() in ['JEFE DE VENTAS', 'SUPERVISOR ARCOR']
+        es_jefe = nombre.upper() in ['JEFE DE VENTAS', 'SUPERVISOR ARCOR']
 
         if es_jefe:
             logger.info('📊 Resumen GENERAL solicitado por Jefe/Supervisor')
+            # Obtener datos consolidados de TODOS los vendedores
             ventas = obtener_datos_generales()
         else:
+            # Obtener datos específicos del vendedor
             ventas = obtener_datos_vendedor(nombre)
 
         if not ventas:
@@ -544,7 +465,7 @@ def recibir():
             enviar_respuesta(numero_remitente, "⚠️ Sin datos disponibles")
             return jsonify({"status": "no_data"}), 404
 
-        logger.info('✅ Datos obtenidos')
+        logger.info(f'✅ Datos obtenidos')
 
         # Generar y enviar respuesta
         mensaje = generar_respuesta(nombre, ventas)
@@ -556,8 +477,8 @@ def recibir():
             logger.error('Error enviando respuesta')
             return jsonify({"status": "send_error"}), 500
 
-    except Exception:
-        logger.exception('Error procesando webhook')
+    except Exception as e:
+        logger.error(f'Error: {e}')
         return jsonify({"status": "error"}), 500
 
 
@@ -569,5 +490,4 @@ if __name__ == '__main__':
     logger.info(f'Palabra clave: "resumen"')
     logger.info('='*60 + '\n')
 
-    # En producción, ejecutar con Gunicorn/uvicorn. Aquí solo para desarrollo local.
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    app.run(host='0.0.0.0', port=5000, debug=True)

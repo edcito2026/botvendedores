@@ -20,3 +20,69 @@
 
 2026-08-15 12:41:47,793 - WARNING -  * Debugger is active!
 2026-08-15 12:41:47,796 - INFO -  * Debugger PIN: 127-441-620
+2026-08-15 13:52:10,726 - INFO - ============================================================
+2026-08-15 13:52:10,726 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 13:52:10,726 - INFO - ============================================================
+2026-08-15 13:52:10,726 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 13:52:10,726 - INFO - Palabra clave: "resumen"
+2026-08-15 13:52:10,727 - INFO - ============================================================
+
+2026-08-15 13:52:10,770 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-08-15 13:52:10,770 - INFO - [33mPress CTRL+C to quit[0m
+2026-08-15 13:52:10,772 - INFO -  * Restarting with stat
+2026-08-15 13:52:11,424 - INFO - ============================================================
+2026-08-15 13:52:11,424 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 13:52:11,424 - INFO - ============================================================
+2026-08-15 13:52:11,424 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 13:52:11,424 - INFO - Palabra clave: "resumen"
+2026-08-15 13:52:11,425 - INFO - ============================================================
+
+2026-08-15 13:52:11,459 - WARNING -  * Debugger is active!
+2026-08-15 13:52:11,462 - INFO -  * Debugger PIN: 127-441-620
+2026-08-15 14:15:36,117 - INFO - ============================================================
+2026-08-15 14:15:36,117 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 14:15:36,119 - INFO - ============================================================
+2026-08-15 14:15:36,120 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 14:15:36,120 - INFO - Palabra clave: "resumen"
+2026-08-15 14:15:36,120 - INFO - ============================================================
+
+2026-08-15 14:15:36,316 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-08-15 14:15:36,316 - INFO - [33mPress CTRL+C to quit[0m
+2026-08-15 14:15:36,320 - INFO -  * Restarting with stat
+2026-08-15 14:15:36,995 - INFO - ============================================================
+2026-08-15 14:15:36,995 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 14:15:36,995 - INFO - ============================================================
+2026-08-15 14:15:36,995 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 14:15:36,995 - INFO - Palabra clave: "resumen"
+2026-08-15 14:15:36,996 - INFO - ============================================================
+
+2026-08-15 14:15:37,030 - WARNING -  * Debugger is active!
+2026-08-15 14:15:37,034 - INFO -  * Debugger PIN: 127-441-620
+2026-08-15 15:45:10,479 - INFO - ============================================================
+2026-08-15 15:45:10,480 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 15:45:10,482 - INFO - ============================================================
+2026-08-15 15:45:10,482 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 15:45:10,482 - INFO - Palabra clave: "resumen"
+2026-08-15 15:45:10,482 - INFO - ============================================================
+
+2026-08-15 15:45:10,529 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-08-15 15:45:10,529 - INFO - [33mPress CTRL+C to quit[0m
+2026-08-15 15:45:10,532 - INFO -  * Restarting with stat
+2026-08-15 15:45:11,247 - INFO - ============================================================
+2026-08-15 15:45:11,247 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 15:45:11,247 - INFO - ============================================================
+2026-08-15 15:45:11,247 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 15:45:11,248 - INFO - Palabra clave: "resumen"
+2026-08-15 15:45:11,248 - INFO - ============================================================
+
+2026-08-15 15:45:11,284 - WARNING -  * Debugger is active!
+2026-08-15 15:45:11,288 - INFO -  * Debugger PIN: 127-441-620

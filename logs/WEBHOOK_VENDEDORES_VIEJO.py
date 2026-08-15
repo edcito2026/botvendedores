@@ -4,7 +4,6 @@
 🔔 WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP
 Recibe mensajes de vendedores, valida su número, extrae ventas personalizadas
 y envía reporte dinámico por WhatsApp API
-FIXED: Índices Excel, palabra clave "resumen", min_row=3
 """
 
 from flask import Flask, request, jsonify
@@ -14,28 +13,23 @@ import logging
 from datetime import datetime
 import json
 import openpyxl
-import os
-from threading import Lock
 
-# ===== CONFIGURACIÓN (variables de entorno) =====
-ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN')
-PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID')
-VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN')
-API_VERSION = os.environ.get('WHATSAPP_API_VERSION', 'v18.0')
+# ===== CONFIGURACIÓN =====
+ACCESS_TOKEN = "EAAO1HSTvFqoBSND9HEaEJi4lKRKBhdU4YhAeiBSH2bu67zxZCvRPqTONojFdRjp112QBxObzZCE8Q2LaLhGV8aJY3kixWsS4fZAxrepU0lFinc7i3iOFCUTTc1GRPGKN8z7w8rC0lqvMZBsQZAodBSTsOCqZAHjjVlQnaI9pT7H9tDEnGFUJOBj5K3iU6aZBDFKzgZDZD"
+PHONE_NUMBER_ID = "1202656292939375"
+VERIFY_TOKEN = "tu_token_verificacion_seguro"
+API_VERSION = "v18.0"
+API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 
 # Palabra clave para solicitar reporte
 PALABRA_CLAVE = "resumen"
 
-# Rutas (relativas + fallback)
-BD_PATH = os.environ.get('BD_PATH', 'ventas.db')
-EXCEL_VENDEDORES = os.environ.get('EXCEL_VENDEDORES', 'vendedores.xlsx')
-
-if PHONE_NUMBER_ID:
-    API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
-else:
-    API_URL = None
+# Rutas
+BD_PATH = r'E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\ventas.db'
+EXCEL_VENDEDORES = r'E:\PRUEBASEXTRACTOR\VENDEDORES.xlsx'
 
 # Logging
+import os
 os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -49,77 +43,54 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# ===== Excel cache (thread-safe) =====
-_EXCEL_CACHE = {'mtime': None, 'data': None}
-_EXCEL_LOCK = Lock()
-
 
 # ===== 1. VALIDAR VENDEDOR =====
 def obtener_vendedores_autorizados():
-    """Lee lista de vendedores autorizados desde Excel (con cache thread-safe)"""
+    """Lee lista de vendedores autorizados desde Excel"""
     try:
-        if not os.path.exists(EXCEL_VENDEDORES):
-            logger.warning(f'Archivo Excel no encontrado: {EXCEL_VENDEDORES}')
-            return {}
+        logger.info('📋 Leyendo vendedores autorizados desde Excel...')
+        vendedores = {}
 
-        mtime = os.path.getmtime(EXCEL_VENDEDORES)
-        with _EXCEL_LOCK:
-            if _EXCEL_CACHE['data'] is not None and _EXCEL_CACHE['mtime'] == mtime:
-                return _EXCEL_CACHE['data']
+        wb = openpyxl.load_workbook(EXCEL_VENDEDORES)
+        ws = wb.active
 
-            logger.info('📋 Leyendo vendedores autorizados desde Excel...')
-            vendedores = {}
+        # Asumir: Columna A = Nombre, Columna B = Teléfono, Columna C = Código
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row[1] and row[0]:  # Teléfono y Nombre
+                telefono = str(row[1]).strip()
+                # Normalizar teléfono: quitar espacios y caracteres especiales
+                telefono_limpio = ''.join(filter(str.isdigit, telefono))
 
-            wb = openpyxl.load_workbook(EXCEL_VENDEDORES, read_only=True, data_only=True)
-            ws = wb.active
+                vendedores[telefono_limpio] = {
+                    'nombre': row[0],
+                    'codigo': row[2] if len(row) > 2 else None,
+                    'telefono': telefono_limpio
+                }
 
-            # Estructura correcta del Excel:
-            # Fila 2: Encabezados (Código Vendedor | Nombre Vendedor | Teléfono | Clientes CALIF=D)
-            # Fila 3+: Datos (10 | ABDEL MARTIN... | 970507377 | 19)
-            for row in ws.iter_rows(min_row=3, values_only=True):
-                if not row or len(row) < 3:
-                    continue
-
-                if row[2]:  # Teléfono en columna C (index 2)
-                    telefono = str(row[2]).strip()
-                    # Normalizar teléfono: quitar espacios y caracteres especiales
-                    telefono_limpio = ''.join(filter(str.isdigit, telefono))
-                    # Usar últimos 9 dígitos (número móvil peruano)
-                    telefono_last9 = telefono_limpio[-9:] if len(telefono_limpio) >= 9 else telefono_limpio
-
-                    vendedores[telefono_last9] = {
-                        'nombre': str(row[1]).strip() if row[1] else None,  # Nombre en columna B (index 1)
-                        'codigo': row[0],  # Código en columna A (index 0)
-                        'telefono': telefono_last9
-                    }
-
-            _EXCEL_CACHE['mtime'] = mtime
-            _EXCEL_CACHE['data'] = vendedores
-            logger.info(f'✅ {len(vendedores)} vendedores autorizados cargados')
-            return vendedores
+        logger.info(f'✅ {len(vendedores)} vendedores autorizados cargados')
+        return vendedores
 
     except Exception as e:
-        logger.exception(f'❌ Error leyendo Excel: {e}')
+        logger.error(f'❌ Error leyendo Excel: {e}')
         return {}
 
 
 def validar_vendedor(numero_telefonico):
-    """Valida si el número de teléfono está autorizado (compara últimos 9 dígitos)"""
+    """Valida si el número de teléfono está autorizado"""
     # Normalizar número
     numero_limpio = ''.join(filter(str.isdigit, numero_telefonico))
-    # Usar últimos 9 dígitos (número móvil peruano)
-    numero_last9 = numero_limpio[-9:] if len(numero_limpio) >= 9 else numero_limpio
 
-    logger.debug(f'Buscando vendedor para: {numero_telefonico} -> last9={numero_last9}')
+    # Remover prefijo internacional si está presente
+    if numero_limpio.startswith('51'):
+        numero_limpio = numero_limpio[2:]
 
     vendedores = obtener_vendedores_autorizados()
 
-    if numero_last9 in vendedores:
-        logger.info(f'✅ Vendedor autorizado: {vendedores[numero_last9]["nombre"]}')
-        return True, vendedores[numero_last9]
+    if numero_limpio in vendedores:
+        logger.info(f'✅ Vendedor autorizado: {vendedores[numero_limpio]["nombre"]}')
+        return True, vendedores[numero_limpio]
     else:
         logger.warning(f'⚠️  Número no autorizado: {numero_telefonico}')
-        logger.debug(f'Números disponibles: {list(vendedores.keys())}')
         return False, None
 
 
@@ -267,15 +238,15 @@ def enviar_mensaje_whatsapp(numero_destino, mensaje):
 
         response = requests.post(API_URL, json=payload, headers=headers, timeout=10)
 
-        if response.ok:
+        if response.status_code == 200:
             logger.info(f'✅ Mensaje enviado correctamente a {numero}')
             return True
         else:
             logger.error(f'❌ Error enviando mensaje ({response.status_code}): {response.text}')
             return False
 
-    except Exception:
-        logger.exception('❌ Error enviando mensaje')
+    except Exception as e:
+        logger.error(f'❌ Error: {e}')
         return False
 
 
@@ -287,11 +258,11 @@ def verificar_webhook():
     verify_token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    if VERIFY_TOKEN and verify_token == VERIFY_TOKEN:
+    if verify_token == VERIFY_TOKEN:
         logger.info('✅ Webhook verificado por Meta')
         return challenge
     else:
-        logger.warning('⚠️  Token de verificación incorrecto o no configurado')
+        logger.warning('⚠️  Token de verificación incorrecto')
         return "Unauthorized", 403
 
 
@@ -299,12 +270,8 @@ def verificar_webhook():
 def recibir_mensaje():
     """Recibe mensajes de WhatsApp"""
     try:
-        data = request.get_json(force=True, silent=True)
-        logger.info('📨 Mensaje recibido')
-
-        if not data:
-            logger.warning('Payload vacío o inválido')
-            return jsonify({"status": "ok"}), 200
+        data = request.get_json()
+        logger.info(f'📨 Mensaje recibido: {json.dumps(data, indent=2)}')
 
         # Extraer información del mensaje
         if 'entry' not in data or not data['entry']:
@@ -396,10 +363,7 @@ if __name__ == '__main__':
     logger.info(f'Palabra clave: "{PALABRA_CLAVE}"')
     logger.info(f'BD: {BD_PATH}')
     logger.info(f'Excel vendedores: {EXCEL_VENDEDORES}')
-    logger.info(f'Puerto: {os.environ.get("PORT", 5000)}')
-    logger.info(f'Normalization: Últimos 9 dígitos (Perú)')
-    logger.info(f'Cache: Thread-safe + mtime check')
     logger.info('='*70 + '\n')
 
-    # En producción, ejecutar con Gunicorn/uvicorn. Aquí solo para desarrollo local.
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+    # Cambiar a production en servidor real:
+    app.run(host='0.0.0.0', port=5000, debug=True)
