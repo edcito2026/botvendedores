@@ -124,7 +124,7 @@ def obtener_datos_vendedor(nombre_vendedor):
                 ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total_ventas,
                 COUNT(DISTINCT Cod_Clie) as clientes
             FROM VENTAS2026
-            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR"
+            WHERE Vendedor = ? AND Proveedor = "ARCOR"
         ''', (nombre_vendedor,))
 
         venta_data = cursor.fetchone()
@@ -142,7 +142,7 @@ def obtener_datos_vendedor(nombre_vendedor):
         cursor.execute('''
             SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket
             FROM VENTAS2026
-            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR"
+            WHERE Vendedor = ? AND Proveedor = "ARCOR"
         ''', (nombre_vendedor,))
 
         ticket = cursor.fetchone()
@@ -167,25 +167,22 @@ def obtener_datos_vendedor(nombre_vendedor):
         cursor.execute('''
             SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as troya
             FROM VENTAS2026
-            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR" AND Calif = "D"
+            WHERE Vendedor = ? AND Proveedor = "ARCOR" AND Calif = "D"
         ''', (nombre_vendedor,))
 
         troya_data = cursor.fetchone()
         datos['ventas_troya'] = troya_data['troya'] or 0
 
         # 6. Clientes TROYA (Calif=D) que compraron vs no compraron
-        # Clientes que compraron (tienen al menos 1 transacción con Calif=D)
         cursor.execute('''
             SELECT COUNT(DISTINCT Cod_Clie) as clientes_troya_compraron
             FROM VENTAS2026
-            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR" AND Calif = "D"
+            WHERE Vendedor = ? AND Proveedor = "ARCOR" AND Calif = "D"
         ''', (nombre_vendedor,))
 
         troya_comp = cursor.fetchone()
         datos['clientes_troya_compraron'] = troya_comp['clientes_troya_compraron'] or 0
 
-        # Clientes que NO compraron (tienen Calif=D pero 0 ventas)
-        # Se calcula: total clientes con Calif=D en base - clientes que sí compraron
         cursor.execute('''
             SELECT COUNT(DISTINCT Cod_Clie) as total_clientes_d
             FROM clientes
@@ -200,7 +197,7 @@ def obtener_datos_vendedor(nombre_vendedor):
         cursor.execute('''
             SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket_troya
             FROM VENTAS2026
-            WHERE Vendedor = ? AND Periodo = "202608" AND Proveedor = "ARCOR" AND Calif = "D"
+            WHERE Vendedor = ? AND Proveedor = "ARCOR" AND Calif = "D"
         ''', (nombre_vendedor,))
 
         ticket_troya = cursor.fetchone()
@@ -227,7 +224,6 @@ def obtener_datos_vendedor(nombre_vendedor):
         datos['cumplimiento_proyectado'] = (datos['proyeccion_ventas'] / datos['cuota'] * 100) if datos['cuota'] > 0 else 0
 
         # 9. Proyección de cobertura (clientes)
-        # Fórmula similar: clientes_actuales + (clientes_actuales/días) * días_restantes
         datos['proyeccion_cobertura'] = int(round(datos['clientes'] + ((datos['clientes'] / dias_transcurridos) * dias_restantes)))
         datos['cumplimiento_cobertura_proyectado'] = (datos['proyeccion_cobertura'] / datos['cuota_cobertura'] * 100) if datos['cuota_cobertura'] > 0 else 0
 
@@ -242,7 +238,7 @@ def obtener_datos_vendedor(nombre_vendedor):
 
 # ===== 3. EXTRAER DATOS AGREGADOS PARA JEFE =====
 def obtener_datos_generales():
-    """Extrae datos consolidados ARCOR para jefe/supervisor"""
+    """Extrae datos consolidados ARCOR para jefe/supervisor - CORREGIDO"""
     try:
         logger.info('🔄 Consultando datos generales ARCOR...')
         conn = sqlite3.connect(BD_PATH)
@@ -251,7 +247,7 @@ def obtener_datos_generales():
 
         datos = {}
 
-        # 1. Ventas totales y cobertura ARCOR
+        # 1. Ventas totales y cobertura ARCOR - CON FILTRO PROVEEDOR
         cursor.execute('''
             SELECT
                 ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total_ventas,
@@ -264,7 +260,7 @@ def obtener_datos_generales():
         datos['total_ventas'] = venta_data['total_ventas'] or 0
         datos['cobertura'] = venta_data['clientes_totales'] or 0
 
-        # 2. Ticket promedio general
+        # 2. Ticket promedio general - CON FILTRO PROVEEDOR
         cursor.execute('''
             SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket
             FROM VENTAS2026
@@ -274,7 +270,7 @@ def obtener_datos_generales():
         ticket = cursor.fetchone()
         datos['ticket_promedio'] = ticket['ticket'] or 0
 
-        # 3. Cuota total ARCOR (Ventas y Cobertura)
+        # 3. Cuota total ARCOR (Ventas y Cobertura) - SIN FILTRO PERIODO, SOLO MES/AÑO
         cursor.execute('''
             SELECT
                 ROUND(SUM(Cuota_Soles), 2) as cuota_ventas,
@@ -284,11 +280,11 @@ def obtener_datos_generales():
         ''')
 
         cuota_data = cursor.fetchone()
-        datos['cuota_ventas'] = cuota_data['cuota_ventas'] if cuota_data else 0
+        datos['cuota_ventas'] = cuota_data['cuota_ventas'] if cuota_data and cuota_data['cuota_ventas'] else 0
         datos['cuota_cobertura'] = int(cuota_data['cuota_cobertura']) if cuota_data and cuota_data['cuota_cobertura'] else 0
         datos['cumplimiento'] = (datos['total_ventas'] / datos['cuota_ventas'] * 100) if datos['cuota_ventas'] > 0 else 0
 
-        # 4. Ventas TROYA (Calif = 'D')
+        # 4. Ventas TROYA (Calif = 'D') - CON FILTRO PROVEEDOR
         cursor.execute('''
             SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as ventas_troya
             FROM VENTAS2026
@@ -298,7 +294,7 @@ def obtener_datos_generales():
         troya_venta = cursor.fetchone()
         datos['ventas_troya'] = troya_venta['ventas_troya'] or 0
 
-        # 5. Líneas de negocio (agrupado por lin_neg)
+        # 5. Líneas de negocio (agrupado por lin_neg) - CON FILTRO PROVEEDOR
         cursor.execute('''
             SELECT
                 lin_neg,
@@ -312,7 +308,7 @@ def obtener_datos_generales():
         lineas = cursor.fetchall()
         datos['lineas_negocio'] = {row['lin_neg']: row['ventas_linea'] for row in lineas}
 
-        # 6. Clientes TROYA (Calif=D) que compraron vs no compraron
+        # 6. Clientes TROYA (Calif=D) que compraron vs no compraron - CON FILTRO PROVEEDOR
         cursor.execute('''
             SELECT COUNT(DISTINCT Cod_Clie) as clientes_troya_compraron
             FROM VENTAS2026
@@ -333,7 +329,7 @@ def obtener_datos_generales():
         total_d_clientes = total_d['total_clientes_d'] or 0
         datos['clientes_troya_no_compraron'] = max(0, total_d_clientes - datos['clientes_troya_compraron'])
 
-        # 7. Ticket promedio solo de clientes TROYA (Calif=D)
+        # 7. Ticket promedio solo de clientes TROYA (Calif=D) - CON FILTRO PROVEEDOR
         cursor.execute('''
             SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket_troya
             FROM VENTAS2026
@@ -409,19 +405,19 @@ def generar_mensaje_vendedor(datos):
 ├─ Ventas Actuales: S/. {datos['total_ventas']:,.2f}
 ├─ Cobertura: {datos['clientes']} clientes
 ├─ Ticket Promedio: S/. {datos['ticket_promedio']:,.2f}
-└─ Ventas TROYA: S/. {datos['ventas_troya']:,.2f}
+└─ Ventas TROYA (Calif=D): S/. {datos['ventas_troya']:,.2f}
 
-⚠️ TROYA RESUMEN:
+⚠️ TROYA (Clientes Críticos - Calif=D):
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
 ├─ No Compraron: {datos['clientes_troya_no_compraron']} clientes
-└─ Ticket TROYA: S/. {datos['ticket_troya']:,.2f}
+└─ Ticket Promedio TROYA: S/. {datos['ticket_troya']:,.2f}
 
-🚀 PROYECCIÓN AL CIERRE:
-├─ Ventas : S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_proyectado']:.1f}%) {proyectado_emoji}
-└─ Cobertura : {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
+🚀 PROYECCIÓN AL 31/AGOSTO:
+├─ Ventas Proyectadas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_proyectado']:.1f}%) {proyectado_emoji}
+└─ Cobertura Proyectada: {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
 
-💪 ¡Sigue adelante...!
-Sistema Automatizado N&J"""
+💪 ¡Sigue adelante!
+Sistema N&J"""
 
     return mensaje
 
@@ -454,18 +450,18 @@ def generar_mensaje_jefe(datos):
 ├─ Ventas Actuales: S/. {datos['total_ventas']:,.2f}
 ├─ Cobertura: {datos['cobertura']} clientes
 ├─ Ticket Promedio: S/. {datos['ticket_promedio']:,.2f}
-└─ Ventas TROYA : S/. {datos['ventas_troya']:,.2f}
+└─ Ventas TROYA (Calif=D): S/. {datos['ventas_troya']:,.2f}
 
 📋 LÍNEAS DE NEGOCIO:
 {lineas_txt}
-⚠️ RESUMEN TROYA :
+⚠️ TROYA:
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
 ├─ No Compraron: {datos['clientes_troya_no_compraron']} clientes
-└─ Ticket Promedio: S/. {datos['ticket_troya']:,.2f}
+└─ Ticket TROYA: S/. {datos['ticket_troya']:,.2f}
 
 🚀 PROYECCIÓN AL CIERRE:
-├─ Ventas : S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_ventas_proyectado']:.1f}%) {proyectado_ventas_emoji}
-└─ Cobertura : {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
+├─ Ventas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_ventas_proyectado']:.1f}%) {proyectado_ventas_emoji}
+└─ Cobertura: {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
 
 📞 Equipo de Ventas N&J"""
 
