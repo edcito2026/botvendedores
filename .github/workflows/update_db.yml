@@ -2,8 +2,10 @@ name: 📊 Actualizar BD diariamente
 
 on:
   schedule:
-    # Se ejecuta a las 6 AM UTC (2 AM Perú) todos los días
-    - cron: '0 6 * * *'
+    # 6 PM Perú (UTC-5) = 11 PM UTC
+    - cron: '0 23 * * *'
+    # 9 PM Perú (UTC-5) = 2 AM UTC (día siguiente)
+    - cron: '0 2 * * *'
 
   # También permite ejecutar manualmente desde GitHub
   workflow_dispatch:
