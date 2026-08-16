@@ -29,9 +29,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
 
-      - name: 🚀 Ejecutar extractor de BD
+      - name: 🚀 Ejecutar extractor de BD optimizado
         run: |
-          python ACTUALIZADOR_DB.py
+          python ACTUALIZADOR_DB_OPTIMIZADO.py
 
       - name: 📝 Configurar Git
         run: |

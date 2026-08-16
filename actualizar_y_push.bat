@@ -30,7 +30,7 @@ REM Ejecutar script de extracción
 echo 🚀 Ejecutando extractor de BD...
 echo.
 
-python ACTUALIZADOR_DB.py
+python ACTUALIZADOR_DB_OPTIMIZADO.py
 
 if errorlevel 1 (
     echo.
