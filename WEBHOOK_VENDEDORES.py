@@ -4,7 +4,7 @@
 🔔 WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP
 Recibe mensajes de vendedores, valida su número, extrae ventas personalizadas
 y envía reporte dinámico por WhatsApp API
-FIXED: Índices Excel, palabra clave "resumen", min_row=3
+FIXED: Índices Excel, palabra clave "resumen", min_row=1 (sin encabezados)
 """
 
 from flask import Flask, request, jsonify
@@ -73,23 +73,23 @@ def obtener_vendedores_autorizados():
             wb = openpyxl.load_workbook(EXCEL_VENDEDORES, read_only=True, data_only=True)
             ws = wb.active
 
-            # Estructura correcta del Excel:
-            # Fila 2: Encabezados (Código Vendedor | Nombre Vendedor | Teléfono | Clientes CALIF=D)
-            # Fila 3+: Datos (10 | ABDEL MARTIN... | 970507377 | 19)
-            for row in ws.iter_rows(min_row=3, values_only=True):
+            # Estructura correcta del Excel (sin encabezados):
+            # Fila 1+: Datos (ABDEL MARTIN... | 970507377 | 19)
+            # Columna A: Nombre | B: Teléfono | C: Clientes
+            for row in ws.iter_rows(min_row=1, values_only=True):
                 if not row or len(row) < 3:
                     continue
 
-                if row[2]:  # Teléfono en columna C (index 2)
-                    telefono = str(row[2]).strip()
+                if row[1]:  # Teléfono en columna B (index 1)
+                    telefono = str(row[1]).strip()
                     # Normalizar teléfono: quitar espacios y caracteres especiales
                     telefono_limpio = ''.join(filter(str.isdigit, telefono))
                     # Usar últimos 9 dígitos (número móvil peruano)
                     telefono_last9 = telefono_limpio[-9:] if len(telefono_limpio) >= 9 else telefono_limpio
 
                     vendedores[telefono_last9] = {
-                        'nombre': str(row[1]).strip() if row[1] else None,  # Nombre en columna B (index 1)
-                        'codigo': row[0],  # Código en columna A (index 0)
+                        'nombre': str(row[0]).strip() if row[0] else None,  # Nombre en columna A (index 0)
+                        'codigo': None,  # No hay código en este Excel
                         'telefono': telefono_last9
                     }
 
