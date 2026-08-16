@@ -1,0 +1,15 @@
+[dom. 16/08/2026 15:02:36.49] ===== INICIANDO ACTUALIZACIÓN ===== 
+[dom. 16/08/2026 15:02:36.50] Ejecutando ACTUALIZADOR_DB.py 
+
+======================================================================
+Traceback (most recent call last):
+  File "E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ACTUALIZADOR_DB.py", line 329, in <module>
+    exito = main()
+  File "E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ACTUALIZADOR_DB.py", line 252, in main
+    print('  \U0001f680 EXTRACTOR OPTIMIZADO DE BD ARCOR - V2')
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f680' in position 2: character maps to <undefined>
+[dom. 16/08/2026 15:02:36.64] ERROR: Script de actualización falló 

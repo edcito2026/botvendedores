@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-🚀 EXTRACTOR OPTIMIZADO DE BD ARCOR
-Extrae tablas de EXTRACTOR.db y crea ventas.db optimizado
-Compatible con Windows y Linux (GitHub Actions)
+🚀 EXTRACTOR OPTIMIZADO DE BD ARCOR - V2
+✅ Solo período actual (mes en curso)
+✅ Columnas optimizadas (sin redundancias)
+✅ Tamaño reducido: 67MB → ~5-8MB
+✅ Mantiene tabla CLIENTES para futuro
 """
 
 import sqlite3
@@ -10,23 +12,17 @@ import shutil
 from datetime import datetime
 import os
 import sys
+from calendar import monthrange
 
-# ====================================
-# CONFIGURACIÓN (rutas relativas)
-# ====================================
-
-# Detectar ruta base según OS
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-PARENT_PATH = os.path.dirname(BASE_PATH)  # Automatizacion\WhatsApp
-REPO_PATH = os.path.dirname(os.path.dirname(PARENT_PATH))  # E:\PRUEBASEXTRACTOR
+PARENT_PATH = os.path.dirname(BASE_PATH)
+REPO_PATH = os.path.dirname(os.path.dirname(os.path.dirname(BASE_PATH)))
 
-# Rutas relativas que funcionan en Windows y Linux
 SOURCE_DB = os.path.join(REPO_PATH, 'EXTRACTOR.db')
 TARGET_DB = os.path.join(BASE_PATH, 'ventas.db')
 BACKUP_DB = os.path.join(BASE_PATH, 'ventas_backup.db')
 LOG_FILE = os.path.join(BASE_PATH, 'logs', 'extract.log')
 
-# Crear carpeta de logs si no existe
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 def log(msg, level='INFO'):
@@ -34,12 +30,11 @@ def log(msg, level='INFO'):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     log_msg = f'[{timestamp}] {level}: {msg}'
     print(log_msg)
-
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(log_msg + '\n')
     except:
-        pass  # Si falla logging, continúa
+        pass
 
 def conectar_db(db_path):
     """Conectar a BD"""
@@ -51,43 +46,32 @@ def conectar_db(db_path):
         log(f'Error conectando a {db_path}: {str(e)}', 'ERROR')
         raise
 
-def crear_tabla_ventas(cursor_target):
-    """Crear tabla VENTAS2026 optimizada en BD destino"""
-    log('Creando tabla VENTAS2026...')
+def obtener_periodo_actual():
+    """Obtener período actual (YYYYMM)"""
+    ahora = datetime.now()
+    periodo = f"{ahora.year}{ahora.month:02d}"
+    return periodo, ahora.year, ahora.month
+
+def crear_tabla_ventas_optimizada(cursor_target):
+    """Crear tabla VENTAS2026 OPTIMIZADA - Solo columnas necesarias"""
+    log('Creando tabla VENTAS2026 optimizada...')
 
     cursor_target.execute('''
         CREATE TABLE IF NOT EXISTS VENTAS2026 (
-            Producto TEXT,
-            Proveedor TEXT,
-            Lin_Neg TEXT,
-            Categoria TEXT,
-            Promo TEXT,
-            CodProd TEXT,
-            Cliente TEXT,
-            Zona TEXT,
-            Canal TEXT,
-            Departamento TEXT,
-            Distrito TEXT,
-            Calif TEXT,
-            Cod_Clie TEXT,
-            Giro TEXT,
-            Periodo TEXT,
-            Dia_Sem TEXT,
-            Documento TEXT,
-            Forma_Pago TEXT,
-            F_Emis TEXT,
-            Cdg_Vend TEXT,
             Vendedor TEXT,
-            Bonif TEXT,
-            Cant_Fct_Vta TEXT,
-            Imp_Total TEXT,
-            ID TEXT PRIMARY KEY,
-            TF_Gratuita TEXT
+            Imp_Total REAL,
+            Cod_Clie TEXT,
+            Documento TEXT,
+            Periodo TEXT,
+            Proveedor TEXT,
+            Calif TEXT,
+            lin_neg TEXT,
+            PRIMARY KEY (Periodo, Documento, Cod_Clie, Vendedor)
         )
     ''')
 
 def crear_tabla_clientes(cursor_target):
-    """Crear tabla clientes optimizada en BD destino"""
+    """Crear tabla clientes COMPLETA (para futuro)"""
     log('Creando tabla clientes...')
 
     cursor_target.execute('''
@@ -116,43 +100,55 @@ def crear_tabla_clientes(cursor_target):
         )
     ''')
 
-def extraer_ventas(conn_source, cursor_target):
-    """Extraer VENTAS2026 con filtros ARCOR"""
-    log('Extrayendo VENTAS2026 (Proveedor = ARCOR)...')
+def crear_tabla_cuotas_optimizada(cursor_target):
+    """Crear tabla cuotas OPTIMIZADA"""
+    log('Creando tabla cuotas optimizada...')
+
+    cursor_target.execute('''
+        CREATE TABLE IF NOT EXISTS cuotas (
+            Vendedor TEXT,
+            NRO_MES INTEGER,
+            AÑO INTEGER,
+            Cuota_Soles REAL,
+            Cuota_Cobertura REAL,
+            Proveedor TEXT,
+            PRIMARY KEY (Vendedor, AÑO, NRO_MES, Proveedor)
+        )
+    ''')
+
+def extraer_ventas_optimizado(conn_source, cursor_target, periodo, año):
+    """Extrae VENTAS2026 - SOLO período actual y columnas necesarias"""
+    log(f'📅 Extrayendo VENTAS2026 (Período: {periodo}, Proveedor: ARCOR)...')
 
     query = '''
-        SELECT *
+        SELECT
+            Vendedor,
+            CAST(Imp_Total AS REAL) as Imp_Total,
+            Cod_Clie,
+            Documento,
+            Periodo,
+            Proveedor,
+            Calif,
+            COALESCE(lin_neg, 'ARCOR') as lin_neg
         FROM VENTAS2026
         WHERE Proveedor = 'ARCOR'
+        AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
     '''
 
     try:
         cursor_source = conn_source.cursor()
-        cursor_source.execute(query)
+        cursor_source.execute(query, (periodo,))
         rows = cursor_source.fetchall()
 
-        log(f'Total de registros a copiar: {len(rows)}')
+        log(f'Total de registros a copiar: {len(rows):,}')
 
         if len(rows) > 0:
-            cols = [description[0] for description in cursor_source.description]
-            periodo_idx = cols.index('Periodo') if 'Periodo' in cols else -1
-
-            rows_procesadas = []
-            for row in rows:
-                row_list = list(row)
-                if periodo_idx >= 0 and row_list[periodo_idx]:
-                    try:
-                        periodo_str = str(int(float(row_list[periodo_idx])))
-                        row_list[periodo_idx] = periodo_str
-                    except:
-                        pass
-                rows_procesadas.append(tuple(row_list))
-
+            cols = ['Vendedor', 'Imp_Total', 'Cod_Clie', 'Documento', 'Periodo', 'Proveedor', 'Calif', 'lin_neg']
             placeholders = ','.join(['?' for _ in cols])
-            insert_sql = f'INSERT INTO VENTAS2026 ({",".join(cols)}) VALUES ({placeholders})'
+            insert_sql = f'INSERT OR IGNORE INTO VENTAS2026 ({",".join(cols)}) VALUES ({placeholders})'
 
-            cursor_target.executemany(insert_sql, rows_procesadas)
-            log(f'✓ {len(rows_procesadas)} registros de VENTAS2026 copiados (Periodo normalizado)')
+            cursor_target.executemany(insert_sql, rows)
+            log(f'✓ {len(rows):,} registros de VENTAS2026 copiados (período {periodo})')
 
         return len(rows)
 
@@ -160,24 +156,24 @@ def extraer_ventas(conn_source, cursor_target):
         log(f'Error extrayendo VENTAS2026: {str(e)}', 'ERROR')
         raise
 
-def extraer_clientes(conn_source, cursor_target):
-    """Extraer tabla clientes completa"""
-    log('Extrayendo tabla clientes...')
+def extraer_clientes_completo(conn_source, cursor_target):
+    """Extrae tabla clientes COMPLETA"""
+    log('Extrayendo tabla clientes (completa para futuro)...')
 
     try:
         cursor_source = conn_source.cursor()
         cursor_source.execute('SELECT * FROM clientes')
         rows = cursor_source.fetchall()
 
-        log(f'Total de clientes: {len(rows)}')
+        log(f'Total de clientes: {len(rows):,}')
 
         if len(rows) > 0:
             cols = [description[0] for description in cursor_source.description]
             placeholders = ','.join(['?' for _ in cols])
-            insert_sql = f'INSERT INTO clientes ({",".join(cols)}) VALUES ({placeholders})'
+            insert_sql = f'INSERT OR IGNORE INTO clientes ({",".join(cols)}) VALUES ({placeholders})'
 
             cursor_target.executemany(insert_sql, rows)
-            log(f'✓ {len(rows)} registros de clientes copiados')
+            log(f'✓ {len(rows):,} registros de clientes copiados')
 
         return len(rows)
 
@@ -185,48 +181,37 @@ def extraer_clientes(conn_source, cursor_target):
         log(f'Error extrayendo clientes: {str(e)}', 'ERROR')
         raise
 
-def crear_tabla_cuotas(cursor_target):
-    """Crear tabla cuotas optimizada en BD destino"""
-    log('Creando tabla cuotas...')
-
-    cursor_target.execute('''
-        CREATE TABLE IF NOT EXISTS cuotas (
-            Vendedor TEXT,
-            Codigo INTEGER,
-            Canal TEXT,
-            Proveedor TEXT,
-            Mes TEXT,
-            NRO_MES INTEGER,
-            AÑO INTEGER,
-            Periodo DATE,
-            Cuota_Soles REAL,
-            Cuota_Cobertura REAL,
-            PRIMARY KEY (Vendedor, AÑO, NRO_MES, Proveedor)
-        )
-    ''')
-
-def extraer_cuotas(conn_source, cursor_target):
-    """Extraer cuotas ARCOR desde CuotasDistribuidas"""
-    log('Extrayendo cuotas ARCOR...')
+def extraer_cuotas_optimizado(conn_source, cursor_target, periodo, año, mes):
+    """Extrae cuotas - SOLO mes actual y columnas necesarias"""
+    log(f'Extrayendo cuotas ARCOR (Mes: {mes}, Año: {año})...')
 
     try:
         cursor_source = conn_source.cursor()
         cursor_source.execute('''
-            SELECT *
+            SELECT
+                Vendedor,
+                NRO_MES,
+                AÑO,
+                CAST(Cuota_Soles AS REAL) as Cuota_Soles,
+                CAST(Cuota_Cobertura AS REAL) as Cuota_Cobertura,
+                Proveedor
             FROM CuotasDistribuidas
             WHERE Proveedor = 'ARCOR'
-        ''')
+            AND NRO_MES = ?
+            AND AÑO = ?
+        ''', (mes, año))
+
         rows = cursor_source.fetchall()
 
-        log(f'Total de cuotas a copiar: {len(rows)}')
+        log(f'Total de cuotas a copiar: {len(rows):,}')
 
         if len(rows) > 0:
-            cols = [description[0] for description in cursor_source.description]
+            cols = ['Vendedor', 'NRO_MES', 'AÑO', 'Cuota_Soles', 'Cuota_Cobertura', 'Proveedor']
             placeholders = ','.join(['?' for _ in cols])
-            insert_sql = f'INSERT INTO cuotas ({",".join(cols)}) VALUES ({placeholders})'
+            insert_sql = f'INSERT OR IGNORE INTO cuotas ({",".join(cols)}) VALUES ({placeholders})'
 
             cursor_target.executemany(insert_sql, rows)
-            log(f'✓ {len(rows)} registros de cuotas ARCOR copiados')
+            log(f'✓ {len(rows):,} registros de cuotas ARCOR copiados (mes {mes}/{año})')
 
         return len(rows)
 
@@ -235,20 +220,15 @@ def extraer_cuotas(conn_source, cursor_target):
         raise
 
 def crear_indices(cursor_target):
-    """Crear índices para optimizar búsquedas"""
-    log('Creando índices para optimización...')
+    """Crear índices para optimización"""
+    log('Creando índices de optimización...')
 
     indices = [
-        ('idx_ventas_cliente', 'VENTAS2026', 'Cliente'),
-        ('idx_ventas_proveedor', 'VENTAS2026', 'Proveedor'),
-        ('idx_ventas_fecha', 'VENTAS2026', 'F_Emis'),
-        ('idx_ventas_codprod', 'VENTAS2026', 'CodProd'),
         ('idx_ventas_vendedor', 'VENTAS2026', 'Vendedor'),
-        ('idx_clientes_razonsocial', 'clientes', 'Raz_Social'),
-        ('idx_clientes_zona', 'clientes', 'Zona'),
+        ('idx_ventas_cliente', 'VENTAS2026', 'Cod_Clie'),
+        ('idx_ventas_periodo', 'VENTAS2026', 'Periodo'),
         ('idx_clientes_vendedor', 'clientes', 'Vendedor'),
         ('idx_cuotas_vendedor', 'cuotas', 'Vendedor'),
-        ('idx_cuotas_año_mes', 'cuotas', 'AÑO'),
     ]
 
     for idx_name, tabla, columna in indices:
@@ -268,12 +248,17 @@ def obtener_tamaño_archivo(ruta):
 
 def main():
     """Proceso principal"""
-    print('\n' + '='*60)
-    print('  🚀 EXTRACTOR OPTIMIZADO DE BD ARCOR')
-    print('='*60 + '\n')
+    print('\n' + '='*70)
+    print('  🚀 EXTRACTOR OPTIMIZADO DE BD ARCOR - V2')
+    print('='*70 + '\n')
 
     inicio = datetime.now()
-    log('Iniciando extracción...')
+    log('Iniciando extracción optimizada...')
+
+    # Obtener período actual
+    periodo_actual, año, mes = obtener_periodo_actual()
+    print(f'📅 Período actual: {periodo_actual} ({mes}/{año})')
+    print(f'✅ Extrayendo SOLO datos del mes en curso\n')
 
     if not os.path.exists(SOURCE_DB):
         log(f'❌ BD fuente no encontrada: {SOURCE_DB}', 'ERROR')
@@ -292,16 +277,20 @@ def main():
         conn_target = conectar_db(TARGET_DB)
         cursor_target = conn_target.cursor()
 
-        crear_tabla_ventas(cursor_target)
+        # Crear tablas optimizadas
+        crear_tabla_ventas_optimizada(cursor_target)
         crear_tabla_clientes(cursor_target)
-        crear_tabla_cuotas(cursor_target)
+        crear_tabla_cuotas_optimizada(cursor_target)
 
-        ventas_count = extraer_ventas(conn_source, cursor_target)
-        clientes_count = extraer_clientes(conn_source, cursor_target)
-        cuotas_count = extraer_cuotas(conn_source, cursor_target)
+        # Extraer datos
+        ventas_count = extraer_ventas_optimizado(conn_source, cursor_target, int(periodo_actual), año)
+        clientes_count = extraer_clientes_completo(conn_source, cursor_target)
+        cuotas_count = extraer_cuotas_optimizado(conn_source, cursor_target, periodo_actual, año, mes)
 
+        # Crear índices
         crear_indices(cursor_target)
 
+        # Confirmar cambios
         conn_target.commit()
         conn_source.close()
         conn_target.close()
@@ -310,23 +299,25 @@ def main():
         tamaño_destino = obtener_tamaño_archivo(TARGET_DB)
         tamaño_fuente = obtener_tamaño_archivo(SOURCE_DB)
 
-        print('\n' + '='*60)
+        print('\n' + '='*70)
         print('  ✅ EXTRACCIÓN COMPLETADA EXITOSAMENTE')
-        print('='*60)
+        print('='*70)
         print(f'\n📊 RESUMEN:')
-        print(f'  BD Fuente: {SOURCE_DB}')
-        print(f'  Tamaño: {tamaño_fuente}')
-        print(f'  BD Destino: {TARGET_DB}')
-        print(f'  Tamaño: {tamaño_destino}')
+        print(f'  BD Fuente:        {tamaño_fuente}')
+        print(f'  BD Destino:       {tamaño_destino}')
         print(f'\n📈 DATOS EXTRAÍDOS:')
-        print(f'  ✓ VENTAS2026: {ventas_count:,}')
-        print(f'  ✓ clientes: {clientes_count:,}')
-        print(f'  ✓ cuotas: {cuotas_count:,}')
+        print(f'  ✓ VENTAS2026 (período {periodo_actual}): {ventas_count:,} registros')
+        print(f'  ✓ clientes (completa):          {clientes_count:,} registros')
+        print(f'  ✓ cuotas (mes {mes}/{año}):             {cuotas_count:,} registros')
+        print(f'\n🔍 OPTIMIZACIONES:')
+        print(f'  • Período extraído: {periodo_actual}')
+        print(f'  • Columnas reducidas: VENTAS2026 (26→8 con Calif, lin_neg), CUOTAS (10→5)')
+        print(f'  • Tabla CLIENTES: Completa (preservada para futuro)')
+        print(f'  • Conversión de Periodo: CAST(CAST(Periodo AS FLOAT) AS INTEGER)')
         print(f'\n⏱️  TIEMPO: {duracion.total_seconds():.2f} segundos')
-        print(f'\n📋 FILTROS: Proveedor = ARCOR')
-        print('\n' + '='*60 + '\n')
+        print('\n' + '='*70 + '\n')
 
-        log(f'✅ Completada en {duracion.total_seconds():.2f} seg')
+        log(f'✅ Extracción optimizada completada en {duracion.total_seconds():.2f} seg')
         return True
 
     except Exception as e:
@@ -336,5 +327,5 @@ def main():
 
 if __name__ == '__main__':
     exito = main()
-    if len(sys.argv) == 1:  # Solo pide input si se ejecuta manualmente
+    if len(sys.argv) == 1:
         input('Presiona Enter para cerrar...')
