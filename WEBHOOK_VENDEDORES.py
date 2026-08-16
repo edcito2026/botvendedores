@@ -231,7 +231,7 @@ Ticket Promedio: S/. {ventas['ticket']:,.2f}
 
 PROYECCIÓN AL 31/AGOSTO:
 Venta Proyectada: S/. {ventas['proyeccion']:,.2f}
-Cumplimiento Proyectado: {(ventas['proyeccion']/ventas['cuota']*100):.1f}%
+Cumplimiento Proyectado: {((ventas['proyeccion']/ventas['cuota']*100) if ventas['cuota'] > 0 else 0):.1f}%
 
 PENDIENTE: {ventas['dias_restantes']} días hábiles
 
