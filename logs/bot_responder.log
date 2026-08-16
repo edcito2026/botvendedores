@@ -86,3 +86,15 @@
 
 2026-08-15 15:45:11,284 - WARNING -  * Debugger is active!
 2026-08-15 15:45:11,288 - INFO -  * Debugger PIN: 127-441-620
+2026-08-15 21:36:44,625 - INFO - ============================================================
+2026-08-15 21:36:44,626 - INFO - 🤖 BOT RESPONDER VENDEDORES INICIANDO
+2026-08-15 21:36:44,627 - INFO - ============================================================
+2026-08-15 21:36:44,627 - INFO - Escuchando: http://localhost:5000/webhook
+2026-08-15 21:36:44,630 - INFO - Palabra clave: "resumen"
+2026-08-15 21:36:44,631 - INFO - ============================================================
+
+2026-08-15 21:36:44,650 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.101:5000
+2026-08-15 21:36:44,651 - INFO - [33mPress CTRL+C to quit[0m
