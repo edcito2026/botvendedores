@@ -205,13 +205,118 @@ def obtener_ventas_vendedor(nombre_vendedor):
         return None
 
 
+# ===== 2b. OBTENER DATOS GENERALES (PARA JEFE/SUPERVISOR) =====
+def obtener_datos_generales():
+    """Obtiene datos consolidados de ARCOR"""
+    try:
+        logger.info(f'🔄 Consultando datos generales ARCOR...')
+        conn = sqlite3.connect(BD_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Ventas totales
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Proveedor = "ARCOR"
+        ''')
+        total_ventas = cursor.fetchone()['total'] or 0
+
+        # Cobertura (clientes únicos)
+        cursor.execute('''
+            SELECT COUNT(DISTINCT Cod_Clie) as total
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Proveedor = "ARCOR"
+        ''')
+        cobertura = cursor.fetchone()['total'] or 0
+
+        # Ticket promedio
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Imp_Total AS REAL)) / COUNT(DISTINCT Documento), 2) as ticket
+            FROM VENTAS2026
+            WHERE Periodo = "202608" AND Proveedor = "ARCOR"
+        ''')
+        ticket = cursor.fetchone()['ticket'] or 0
+
+        # Cuota total
+        cursor.execute('''
+            SELECT ROUND(SUM(CAST(Cuota_Soles AS REAL)), 2) as cuota
+            FROM cuotas
+            WHERE AÑO = 2026 AND NRO_MES = 8 AND Proveedor = "ARCOR"
+        ''')
+        cuota_total = cursor.fetchone()['cuota'] or 0
+
+        # Cumplimiento
+        cumplimiento = (total_ventas / cuota_total * 100) if cuota_total > 0 else 0
+
+        # Proyección
+        cursor.execute('''
+            WITH RECURSIVE dates AS (
+              SELECT DATE('2026-08-01') as fecha
+              UNION ALL
+              SELECT DATE(fecha, '+1 day') FROM dates
+              WHERE fecha <= DATE('now')
+            )
+            SELECT COUNT(*) as dias FROM dates
+            WHERE CAST(strftime('%w', fecha) AS INTEGER) IN (1,2,3,4,5,6)
+        ''')
+
+        dias_data = cursor.fetchone()
+        dias_transcurridos = dias_data['dias'] or 1
+        dias_restantes = 26 - dias_transcurridos
+        proyeccion = round(total_ventas + ((total_ventas / dias_transcurridos) * dias_restantes), 2)
+
+        conn.close()
+        logger.info(f'✅ Datos generales obtenidos')
+
+        return {
+            'total': total_ventas,
+            'clientes': cobertura,
+            'ticket': ticket,
+            'cuota': cuota_total,
+            'cumplimiento': cumplimiento,
+            'proyeccion': proyeccion,
+            'dias_restantes': dias_restantes,
+            'es_general': True
+        }
+
+    except Exception as e:
+        logger.error(f'❌ Error obteniendo datos generales: {e}')
+        return None
+
+
 # ===== 3. GENERAR MENSAJE PERSONALIZADO =====
 def generar_mensaje_vendedor(nombre, ventas):
-    """Genera mensaje personalizado con datos del vendedor"""
+    """Genera mensaje personalizado o general según corresponda"""
 
     if not ventas:
         return None
 
+    # Reporte general para JEFE/SUPERVISOR
+    if ventas.get('es_general'):
+        cumplimiento_emoji = "🟢" if ventas['cumplimiento'] >= 75 else "🟡" if ventas['cumplimiento'] >= 50 else "🔴"
+
+        mensaje = f"""📊 REPORTE ARCOR - AGOSTO
+{datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+RESULTADOS ACTUALES:
+Ventas: S/. {ventas['total']:,.2f}
+Cobertura: {ventas['clientes']} clientes
+Ticket Promedio: S/. {ventas['ticket']:,.2f}
+Cuota: S/. {ventas['cuota']:,.2f}
+
+CUMPLIMIENTO: {ventas['cumplimiento']:.1f}% {cumplimiento_emoji}
+
+PROYECCIÓN AL 31/AGOSTO:
+Ventas: S/. {ventas['proyeccion']:,.2f}
+Cobertura: {int(ventas['clientes'] * (ventas['proyeccion'] / ventas['total']) if ventas['total'] > 0 else 0)} clientes
+
+PENDIENTE: {ventas['dias_restantes']} días hábiles
+
+Sistema Automatizado N&J"""
+        return mensaje
+
+    # Reporte personal para vendedores
     cumplimiento_emoji = "🟢" if ventas['cumplimiento'] >= 75 else "🟡" if ventas['cumplimiento'] >= 50 else "🔴"
 
     mensaje = f"""📊 REPORTE PERSONAL - AGOSTO
@@ -348,7 +453,15 @@ def recibir_mensaje():
             return jsonify({"status": "unauthorized"}), 403
 
         # TAREA 3: Extraer datos dinámicos
-        ventas = obtener_ventas_vendedor(datos_vendedor['nombre'])
+        nombre_vendedor = datos_vendedor['nombre']
+        es_jefe = nombre_vendedor.upper() in ['JEFE DE VENTAS', 'SUPERVISOR ARCOR']
+
+        if es_jefe:
+            logger.info(f'👑 Detectado: {nombre_vendedor} (solicitud de reporte general)')
+            ventas = obtener_datos_generales()
+        else:
+            logger.info(f'👤 Vendedor: {nombre_vendedor} (solicitud de reporte personal)')
+            ventas = obtener_ventas_vendedor(nombre_vendedor)
 
         if not ventas:
             mensaje_respuesta = "⚠️ No se encontraron datos de ventas. Intenta más tarde."
@@ -356,13 +469,13 @@ def recibir_mensaje():
             return jsonify({"status": "no_data"}), 404
 
         # TAREA 4: Generar y enviar reporte
-        mensaje_personalizado = generar_mensaje_vendedor(datos_vendedor['nombre'], ventas)
+        mensaje_personalizado = generar_mensaje_vendedor(nombre_vendedor, ventas)
 
         if mensaje_personalizado:
             exito = enviar_mensaje_whatsapp(numero_remitente, mensaje_personalizado)
 
             if exito:
-                logger.info(f'✅ Reporte enviado exitosamente a {datos_vendedor["nombre"]}')
+                logger.info(f'✅ Reporte enviado exitosamente a {nombre_vendedor}')
                 return jsonify({"status": "success"}), 200
             else:
                 logger.error(f'❌ Error al enviar reporte')
