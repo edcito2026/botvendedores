@@ -382,7 +382,9 @@ def es_jefe(nombre_usuario, rol=""):
     rol = (rol or "").strip().upper()
 
     if rol:
-        return rol in {"JEFE", "SUPERVISOR", "GERENTE", "COORDINADOR"}
+        # Busca palabras clave en el rol (no coincidencia exacta)
+        jefe_keywords = ["JEFE", "SUPERVISOR", "GERENTE", "COORDINADOR"]
+        return any(keyword in rol for keyword in jefe_keywords)
 
     # Compatibilidad temporal con Excel antiguo.
     nombre_lower = nombre_usuario.lower()
