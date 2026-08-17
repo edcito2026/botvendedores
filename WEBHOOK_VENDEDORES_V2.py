@@ -1,30 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP - V2
+WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP - V2 CORREGIDO
 
-Cambios principales respecto a la versión anterior:
-- Credenciales obligatorias por variables de entorno (sin secretos en el código).
-- Periodo y nombre de mes dinámicos.
-- Proyección basada en días laborables reales del mes; no hay 26 días fijos.
-- Reporte de jefe/supervisor filtrado correctamente por el mes actual.
-- Rol preferentemente definido en columna D del Excel; mantiene compatibilidad con el esquema anterior.
-- Protección básica contra webhooks duplicados mediante message_id.
-- Logs sin imprimir el payload completo de WhatsApp.
-- Conexiones SQLite cerradas de forma segura.
-- Manejo de fechas en zona horaria America/Lima.
-
-Excel esperado:
-A = Nombre | B = Teléfono | C = Clientes | D = Rol (opcional: VENDEDOR / SUPERVISOR / JEFE / GERENTE / COORDINADOR)
-
-Variables de entorno recomendadas en Render:
-WHATSAPP_ACCESS_TOKEN
-WHATSAPP_PHONE_NUMBER_ID
-WHATSAPP_VERIFY_TOKEN
-WHATSAPP_API_VERSION (opcional, default v25.0)
-BD_PATH (opcional)
-EXCEL_VENDEDORES (opcional)
-DIAS_LABORABLES (opcional, default 0,1,2,3,4,5 = lunes a sábado; domingo no laborable)
+Cambios en esta versión:
+✅ Normalización de período: CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
+✅ Maneja períodos con decimal ('202608.0' → 202608)
+- Credenciales por variables de entorno (sin secretos)
+- Período y nombre de mes dinámicos
+- Proyección basada en días laborables reales
+- Protección contra webhooks duplicados
+- Conexiones SQLite seguras
+- Zona horaria America/Lima
 """
 
 from flask import Flask, request, jsonify
@@ -414,6 +401,7 @@ def obtener_datos_vendedor(nombre_vendedor):
     try:
         ctx = obtener_contexto_periodo()
         periodo = ctx["periodo"]
+        periodo_int = int(float(periodo))  # Normaliza '202608' → 202608
         anio = ctx["anio"]
         mes = ctx["mes"]
         dias = calcular_dias_laborables_periodo()
@@ -423,16 +411,16 @@ def obtener_datos_vendedor(nombre_vendedor):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # 1. Ventas y clientes
+        # 1. Ventas y clientes - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS total_ventas,
                 COUNT(DISTINCT Cod_Clie) AS clientes
             FROM VENTAS2026
             WHERE Vendedor = ?
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Proveedor = 'ARCOR'
-        """, (nombre_vendedor, periodo))
+        """, (nombre_vendedor, periodo_int))
 
         venta_data = cursor.fetchone()
 
@@ -447,7 +435,7 @@ def obtener_datos_vendedor(nombre_vendedor):
             "dias_laborables_total": dias["dias_laborables_total"],
         }
 
-        # 2. Ticket promedio general
+        # 2. Ticket promedio general - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 COALESCE(
@@ -459,9 +447,9 @@ def obtener_datos_vendedor(nombre_vendedor):
                 ) AS ticket
             FROM VENTAS2026
             WHERE Vendedor = ?
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Proveedor = 'ARCOR'
-        """, (nombre_vendedor, periodo))
+        """, (nombre_vendedor, periodo_int))
         ticket = cursor.fetchone()
         datos["ticket_promedio"] = ticket["ticket"] or 0
 
@@ -486,27 +474,27 @@ def obtener_datos_vendedor(nombre_vendedor):
             if datos["cuota"] > 0 else 0
         )
 
-        # 5. TROYA - ventas en Calif=D
+        # 5. TROYA - ventas en Calif=D - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)), 2), 0) AS troya
             FROM VENTAS2026
             WHERE Vendedor = ?
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Proveedor = 'ARCOR'
               AND Calif = 'D'
-        """, (nombre_vendedor, periodo))
+        """, (nombre_vendedor, periodo_int))
         troya_data = cursor.fetchone()
         datos["ventas_troya"] = troya_data["troya"] or 0
 
-        # 6. Clientes TROYA que compraron
+        # 6. Clientes TROYA que compraron - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT COUNT(DISTINCT Cod_Clie) AS clientes_troya_compraron
             FROM VENTAS2026
             WHERE Vendedor = ?
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Proveedor = 'ARCOR'
               AND Calif = 'D'
-        """, (nombre_vendedor, periodo))
+        """, (nombre_vendedor, periodo_int))
         troya_comp = cursor.fetchone()
         datos["clientes_troya_compraron"] = troya_comp["clientes_troya_compraron"] or 0
 
@@ -524,7 +512,7 @@ def obtener_datos_vendedor(nombre_vendedor):
             total_d_clientes - datos["clientes_troya_compraron"]
         )
 
-        # 8. Ticket TROYA
+        # 8. Ticket TROYA - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 COALESCE(
@@ -536,10 +524,10 @@ def obtener_datos_vendedor(nombre_vendedor):
                 ) AS ticket_troya
             FROM VENTAS2026
             WHERE Vendedor = ?
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Proveedor = 'ARCOR'
               AND Calif = 'D'
-        """, (nombre_vendedor, periodo))
+        """, (nombre_vendedor, periodo_int))
         ticket_troya = cursor.fetchone()
         datos["ticket_troya"] = ticket_troya["ticket_troya"] or 0
 
@@ -590,6 +578,7 @@ def obtener_datos_generales():
     try:
         ctx = obtener_contexto_periodo()
         periodo = ctx["periodo"]
+        periodo_int = int(float(periodo))  # Normaliza '202608' → 202608
         anio = ctx["anio"]
         mes = ctx["mes"]
         dias = calcular_dias_laborables_periodo()
@@ -606,20 +595,20 @@ def obtener_datos_generales():
             "dias_laborables_total": dias["dias_laborables_total"],
         }
 
-        # 1. Ventas y cobertura ARCOR del mes actual
+        # 1. Ventas y cobertura ARCOR del mes actual - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS total_ventas,
                 COUNT(DISTINCT Cod_Clie) AS clientes_totales
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
-              AND Periodo = ?
-        """, (periodo,))
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
+        """, (periodo_int,))
         venta_data = cursor.fetchone()
         datos["total_ventas"] = venta_data["total_ventas"] or 0
         datos["cobertura"] = venta_data["clientes_totales"] or 0
 
-        # 2. Ticket promedio general del mes
+        # 2. Ticket promedio general del mes - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 COALESCE(
@@ -631,8 +620,8 @@ def obtener_datos_generales():
                 ) AS ticket
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
-              AND Periodo = ?
-        """, (periodo,))
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
+        """, (periodo_int,))
         ticket = cursor.fetchone()
         datos["ticket_promedio"] = ticket["ticket"] or 0
 
@@ -654,47 +643,46 @@ def obtener_datos_generales():
             if datos["cuota_ventas"] > 0 else 0
         )
 
-        # 4. Ventas TROYA del mes
+        # 4. Ventas TROYA del mes - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)), 2), 0) AS ventas_troya
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Calif = 'D'
-        """, (periodo,))
+        """, (periodo_int,))
         troya_venta = cursor.fetchone()
         datos["ventas_troya"] = troya_venta["ventas_troya"] or 0
 
-        # 5. Líneas de negocio del mes
+        # 5. Líneas de negocio del mes - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 lin_neg,
                 ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS ventas_linea
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
             GROUP BY lin_neg
             ORDER BY ventas_linea DESC
-        """, (periodo,))
+        """, (periodo_int,))
         lineas = cursor.fetchall()
         datos["lineas_negocio"] = {
             row["lin_neg"] if row["lin_neg"] else "SIN LÍNEA": row["ventas_linea"]
             for row in lineas
         }
 
-        # 6. Clientes TROYA que compraron
+        # 6. Clientes TROYA que compraron - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT COUNT(DISTINCT Cod_Clie) AS clientes_troya_compraron
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Calif = 'D'
-        """, (periodo,))
+        """, (periodo_int,))
         troya_comp = cursor.fetchone()
         datos["clientes_troya_compraron"] = troya_comp["clientes_troya_compraron"] or 0
 
-        # Base TROYA total. Se mantiene sin periodo porque la tabla clientes
-        # representa la cartera; las compras sí están limitadas al periodo.
+        # Base TROYA total
         cursor.execute("""
             SELECT COUNT(DISTINCT Cod_Clie) AS total_clientes_d
             FROM clientes
@@ -707,7 +695,7 @@ def obtener_datos_generales():
             total_d_clientes - datos["clientes_troya_compraron"]
         )
 
-        # 7. Ticket TROYA del mes
+        # 7. Ticket TROYA del mes - NORMALIZAR PERÍODO
         cursor.execute("""
             SELECT
                 COALESCE(
@@ -719,9 +707,9 @@ def obtener_datos_generales():
                 ) AS ticket_troya
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
-              AND Periodo = ?
+              AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
               AND Calif = 'D'
-        """, (periodo,))
+        """, (periodo_int,))
         ticket_troya = cursor.fetchone()
         datos["ticket_troya"] = ticket_troya["ticket_troya"] or 0
 
@@ -1073,7 +1061,7 @@ def status():
         "timestamp": ctx["ahora"].isoformat(),
         "webhook": "/webhook",
         "palabra_clave": PALABRA_CLAVE,
-        "version": "V2",
+        "version": "V2 CORREGIDO",
         "periodo": ctx["periodo"],
         "mes": ctx["nombre_mes"],
         "dias_laborables": dias,
@@ -1087,7 +1075,7 @@ def status():
 
 if __name__ == "__main__":
     logger.info("=" * 70)
-    logger.info("🚀 SERVIDOR WEBHOOK WHATSAPP - V2")
+    logger.info("🚀 SERVIDOR WEBHOOK WHATSAPP - V2 CORREGIDO")
     logger.info("=" * 70)
     ctx = obtener_contexto_periodo()
     dias = calcular_dias_laborables_periodo()
