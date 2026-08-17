@@ -52,23 +52,36 @@ def obtener_periodo_actual():
     periodo = f"{ahora.year}{ahora.month:02d}"
     return periodo, ahora.year, ahora.month
 
-def crear_tabla_ventas_optimizada(cursor_target):
-    """Crear tabla VENTAS2026 OPTIMIZADA - Solo columnas necesarias"""
-    log('Creando tabla VENTAS2026 optimizada...')
+def crear_tabla_ventas_dinamica(conn_source, cursor_target):
+    """Crear tabla VENTAS2026 con TODAS las columnas de EXTRACTOR.db"""
+    log('Leyendo estructura de VENTAS2026 desde EXTRACTOR.db...')
 
-    cursor_target.execute('''
-        CREATE TABLE IF NOT EXISTS VENTAS2026 (
-            Vendedor TEXT,
-            Imp_Total REAL,
-            Cod_Clie TEXT,
-            Documento TEXT,
-            Periodo TEXT,
-            Proveedor TEXT,
-            Calif TEXT,
-            lin_neg TEXT,
-            PRIMARY KEY (Periodo, Documento, Cod_Clie, Vendedor)
-        )
-    ''')
+    try:
+        cursor_source = conn_source.cursor()
+        cursor_source.execute('PRAGMA table_info(VENTAS2026)')
+        columns_info = cursor_source.fetchall()
+
+        if not columns_info:
+            log('❌ Tabla VENTAS2026 no encontrada en EXTRACTOR.db', 'ERROR')
+            raise Exception('VENTAS2026 no existe en EXTRACTOR.db')
+
+        # Construir CREATE TABLE con TODAS las columnas
+        create_sql = 'CREATE TABLE IF NOT EXISTS VENTAS2026 (\n'
+        col_defs = []
+        for col in columns_info:
+            col_name = col[1]
+            col_type = col[2] if col[2] else 'TEXT'
+            col_defs.append(f'  {col_name} {col_type}')
+
+        create_sql += ',\n'.join(col_defs) + '\n)'
+
+        cursor_target.execute(create_sql)
+        log(f'✓ Tabla VENTAS2026 creada con {len(columns_info)} columnas (estructura completa)')
+        return columns_info
+
+    except Exception as e:
+        log(f'Error creando tabla VENTAS2026: {str(e)}', 'ERROR')
+        raise
 
 def crear_tabla_clientes(cursor_target):
     """Crear tabla clientes COMPLETA (para futuro)"""
@@ -116,39 +129,34 @@ def crear_tabla_cuotas_optimizada(cursor_target):
         )
     ''')
 
-def extraer_ventas_optimizado(conn_source, cursor_target, periodo, año):
-    """Extrae VENTAS2026 - SOLO período actual y columnas necesarias"""
-    log(f'📅 Extrayendo VENTAS2026 (Período: {periodo}, Proveedor: ARCOR)...')
-
-    query = '''
-        SELECT
-            Vendedor,
-            CAST(Imp_Total AS REAL) as Imp_Total,
-            Cod_Clie,
-            Documento,
-            Periodo,
-            Proveedor,
-            Calif,
-            COALESCE(lin_neg, 'ARCOR') as lin_neg
-        FROM VENTAS2026
-        WHERE Proveedor = 'ARCOR'
-        AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
-    '''
+def extraer_ventas_completo(conn_source, cursor_target, periodo, año, columns_info):
+    """Extrae VENTAS2026 - TODAS las columnas, período actual, Proveedor=ARCOR"""
+    log(f'📅 Extrayendo VENTAS2026 (Período: {periodo}, Proveedor: ARCOR, TODAS columnas)...')
 
     try:
         cursor_source = conn_source.cursor()
+
+        # Extraer TODAS las columnas
+        query = '''
+            SELECT *
+            FROM VENTAS2026
+            WHERE Proveedor = 'ARCOR'
+            AND CAST(CAST(Periodo AS FLOAT) AS INTEGER) = ?
+        '''
+
         cursor_source.execute(query, (periodo,))
         rows = cursor_source.fetchall()
 
-        log(f'Total de registros a copiar: {len(rows):,}')
+        log(f'Total de registros encontrados: {len(rows):,}')
 
         if len(rows) > 0:
-            cols = ['Vendedor', 'Imp_Total', 'Cod_Clie', 'Documento', 'Periodo', 'Proveedor', 'Calif', 'lin_neg']
+            # Obtener nombres de todas las columnas
+            cols = [col[1] for col in columns_info]
             placeholders = ','.join(['?' for _ in cols])
             insert_sql = f'INSERT OR IGNORE INTO VENTAS2026 ({",".join(cols)}) VALUES ({placeholders})'
 
             cursor_target.executemany(insert_sql, rows)
-            log(f'✓ {len(rows):,} registros de VENTAS2026 copiados (período {periodo})')
+            log(f'✓ {len(rows):,} registros de VENTAS2026 copiados (período {periodo}, {len(cols)} columnas)')
 
         return len(rows)
 
@@ -277,13 +285,13 @@ def main():
         conn_target = conectar_db(TARGET_DB)
         cursor_target = conn_target.cursor()
 
-        # Crear tablas optimizadas
-        crear_tabla_ventas_optimizada(cursor_target)
+        # Crear tablas dinámicamente
+        ventas_columns = crear_tabla_ventas_dinamica(conn_source, cursor_target)
         crear_tabla_clientes(cursor_target)
         crear_tabla_cuotas_optimizada(cursor_target)
 
-        # Extraer datos
-        ventas_count = extraer_ventas_optimizado(conn_source, cursor_target, int(periodo_actual), año)
+        # Extraer datos (TODAS las columnas de VENTAS2026)
+        ventas_count = extraer_ventas_completo(conn_source, cursor_target, int(periodo_actual), año, ventas_columns)
         clientes_count = extraer_clientes_completo(conn_source, cursor_target)
         cuotas_count = extraer_cuotas_optimizado(conn_source, cursor_target, periodo_actual, año, mes)
 
@@ -309,11 +317,12 @@ def main():
         print(f'  ✓ VENTAS2026 (período {periodo_actual}): {ventas_count:,} registros')
         print(f'  ✓ clientes (completa):          {clientes_count:,} registros')
         print(f'  ✓ cuotas (mes {mes}/{año}):             {cuotas_count:,} registros')
-        print(f'\n🔍 OPTIMIZACIONES:')
-        print(f'  • Período extraído: {periodo_actual}')
-        print(f'  • Columnas reducidas: VENTAS2026 (26→8 con Calif, lin_neg), CUOTAS (10→5)')
+        print(f'\n🔍 CONFIGURACIÓN:')
+        print(f'  • Período extraído: {periodo_actual} (mes actual)')
+        print(f'  • VENTAS2026: TODAS las 26 columnas')
+        print(f'  • Filtro Proveedor: ARCOR')
         print(f'  • Tabla CLIENTES: Completa (preservada para futuro)')
-        print(f'  • Conversión de Periodo: CAST(CAST(Periodo AS FLOAT) AS INTEGER)')
+        print(f'  • Tabla CUOTAS: Optimizada (columnas esenciales)')
         print(f'\n⏱️  TIEMPO: {duracion.total_seconds():.2f} segundos')
         print('\n' + '='*70 + '\n')
 
