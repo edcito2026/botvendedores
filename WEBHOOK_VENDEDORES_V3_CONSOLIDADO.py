@@ -326,8 +326,8 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE Cliente = ? AND Periodo = ?
-                """, (cliente['Raz_Social'], periodo_actual))
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
+                """, (cliente['Raz_Social'], nombre_vendedor, periodo_actual))
                 resultado_actual = cursor.fetchone()
                 venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
 
@@ -335,8 +335,8 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE Cliente = ? AND Periodo = ?
-                """, (cliente['Raz_Social'], periodo_anterior))
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
+                """, (cliente['Raz_Social'], nombre_vendedor, periodo_anterior))
                 resultado_anterior = cursor.fetchone()
                 venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
 
@@ -386,8 +386,8 @@ def obtener_clientes_troya_generales():
                 cursor.execute("""
                     SELECT COUNT(*) as total_compras
                     FROM VENTAS2026
-                    WHERE Cliente = ? AND Periodo = ?
-                """, (cliente['Raz_Social'], periodo))
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
+                """, (cliente['Raz_Social'], cliente['Vendedor'], periodo))
                 resultado = cursor.fetchone()
                 total_compras = resultado['total_compras'] if resultado else 0
                 cliente['tiene_compras'] = total_compras > 0
