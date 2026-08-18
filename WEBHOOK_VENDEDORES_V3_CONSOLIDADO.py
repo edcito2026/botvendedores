@@ -294,6 +294,8 @@ def es_jefe(rol=""):
 def obtener_clientes_troya(nombre_vendedor):
     """Obtiene clientes TROYA (Calif='D') del vendedor"""
     try:
+        logger.info(f"🔍 Buscando TROYA para: '{nombre_vendedor}'")
+
         conn = sqlite3.connect(BD_PATH, timeout=15)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -307,6 +309,7 @@ def obtener_clientes_troya(nombre_vendedor):
         """, (nombre_vendedor,))
 
         clientes = [dict(row) for row in cursor.fetchall()]
+        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
 
         # Período actual
         ahora = ahora_local()
@@ -331,6 +334,52 @@ def obtener_clientes_troya(nombre_vendedor):
         return clientes
     except Exception as e:
         logger.error(f"❌ Error obteniendo clientes TROYA: {e}")
+        return []
+
+
+def obtener_clientes_troya_generales():
+    """Obtiene clientes TROYA (Calif='D') de TODOS los vendedores"""
+    try:
+        logger.info("🔍 Buscando TROYA GENERAL para todos los vendedores")
+
+        conn = sqlite3.connect(BD_PATH, timeout=15)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Obtener todos los clientes CALIF=D
+        cursor.execute("""
+            SELECT Cod_Clie, Raz_Social, Giro, Vendedor
+            FROM clientes
+            WHERE Calif = 'D'
+            ORDER BY Vendedor, Raz_Social
+        """)
+
+        clientes = [dict(row) for row in cursor.fetchall()]
+        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL")
+
+        # Período actual
+        ahora = ahora_local()
+        periodo = f"{ahora.year}{ahora.month:02d}"
+        tabla_ventas = f"VENTAS{ahora.year}"
+
+        # Verificar compras
+        for cliente in clientes:
+            try:
+                cursor.execute(f"""
+                    SELECT COUNT(*) as total_compras
+                    FROM {tabla_ventas}
+                    WHERE Cod_Clie = ? AND strftime('%Y%m', Fecha) = ?
+                """, (cliente['Cod_Clie'], periodo))
+                resultado = cursor.fetchone()
+                total_compras = resultado['total_compras'] if resultado else 0
+                cliente['tiene_compras'] = total_compras > 0
+            except:
+                cliente['tiene_compras'] = False
+
+        conn.close()
+        return clientes
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo clientes TROYA generales: {e}")
         return []
 
 # ============================================================
@@ -389,6 +438,66 @@ Total: {cantidad} clientes especiales
 2️⃣ Reactiva sin compra
 3️⃣ Envía promociones
 4️⃣ Cierra la venta
+
+🤖 Bot N&J"""
+
+    return mensaje
+
+
+def generar_mensaje_troya_jefe(clientes):
+    """Genera reporte consolidado de TROYA para jefe/supervisor"""
+
+    if not clientes:
+        return """👨‍💼 REPORTE TROYA CONSOLIDADO
+
+No hay clientes TROYA (Calif=D) registrados.
+
+🤖 Bot N&J"""
+
+    ahora = ahora_local()
+    mes_nombre = MESES_ES[ahora.month - 1]
+
+    total_clientes = len(clientes)
+    con_compra_total = sum(1 for c in clientes if c.get('tiene_compras'))
+    sin_compra_total = total_clientes - con_compra_total
+
+    # Agrupar por vendedor
+    por_vendedor = {}
+    for cliente in clientes:
+        vendedor = cliente.get('Vendedor', 'SIN VENDEDOR')
+        if vendedor not in por_vendedor:
+            por_vendedor[vendedor] = {'total': 0, 'con_compra': 0, 'sin_compra': 0}
+        por_vendedor[vendedor]['total'] += 1
+        if cliente.get('tiene_compras'):
+            por_vendedor[vendedor]['con_compra'] += 1
+        else:
+            por_vendedor[vendedor]['sin_compra'] += 1
+
+    pct_con_compra = (con_compra_total / total_clientes * 100) if total_clientes > 0 else 0
+
+    mensaje = f"""👨‍💼 REPORTE TROYA CONSOLIDADO - {mes_nombre}
+{ahora_local().strftime('%d/%m/%Y %H:%M')}
+
+📊 RESUMEN GENERAL:
+├─ Total Clientes TROYA: {total_clientes}
+├─ ✅ Con Compra: {con_compra_total} ({pct_con_compra:.1f}%)
+└─ ❌ Sin Compra: {sin_compra_total}
+
+📈 POR VENDEDOR:
+"""
+
+    for vendedor in sorted(por_vendedor.keys()):
+        datos = por_vendedor[vendedor]
+        pct = (datos['con_compra'] / datos['total'] * 100) if datos['total'] > 0 else 0
+        mensaje += f"\n{vendedor}\n"
+        mensaje += f"  Total: {datos['total']} | ✅ {datos['con_compra']} ({pct:.0f}%) | ❌ {datos['sin_compra']}"
+
+    mensaje += """
+
+⚡ ACCIONES REQUERIDAS:
+• Todos deben reactivar clientes SIN COMPRA
+• Mantener activos los clientes CON COMPRA
+• Enviar promociones especiales
 
 🤖 Bot N&J"""
 
@@ -822,9 +931,16 @@ def recibir_mensaje():
 
         # ========== PALABRA CLAVE: TROYA ==========
         if palabra_detectada == "TROYA":
-            logger.info(f"🎯 Solicitud TROYA de {nombre_usuario}")
-            clientes_troya = obtener_clientes_troya(codigo_usuario)
-            mensaje = generar_mensaje_troya(datos_usuario, clientes_troya)
+            es_jefe_supervisor = es_jefe(rol)
+
+            if es_jefe_supervisor:
+                logger.info(f"👔 Jefe/Supervisor solicita TROYA: {nombre_usuario}")
+                clientes_troya = obtener_clientes_troya_generales()
+                mensaje = generar_mensaje_troya_jefe(clientes_troya)
+            else:
+                logger.info(f"👤 Vendedor solicita TROYA: {nombre_usuario}")
+                clientes_troya = obtener_clientes_troya(nombre_usuario)
+                mensaje = generar_mensaje_troya(datos_usuario, clientes_troya)
 
             if not mensaje:
                 mensaje = "⚠️ Error generando reporte TROYA"
