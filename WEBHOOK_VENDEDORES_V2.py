@@ -785,15 +785,15 @@ def generar_mensaje_vendedor(datos):
 👤 {datos['vendedor'].upper()}
 
 🎯 OBJETIVOS MES:
-├─ Cuota Ventas: S/. {datos['cuota']:,.2f}
-└─ Cuota Cobertura: {datos['cuota_cobertura']} clientes
+├─ Ventas: S/. {datos['cuota']:,.2f}
+└─ Cobertura: {datos['cuota_cobertura']} clientes
 
 💼 DESEMPEÑO:
-├─ Ventas Actuales: S/. {datos['total_ventas']:,.2f}
-├─ Cumplimiento: {cumpl:.1f}% {cumplimiento_emoji}
+├─ Ventas: S/. {datos['total_ventas']:,.2f}
+├─ Avance: {cumpl:.1f}% {cumplimiento_emoji}
 ├─ Cobertura: {datos['clientes']} clientes
-├─ Ticket Promedio: S/. {datos['ticket_promedio']:,.2f}
-└─ Ventas TROYA: S/. {datos['ventas_troya']:,.2f}
+├─ Ticket: S/. {datos['ticket_promedio']:,.2f}
+└─ TROYA: S/. {datos['ventas_troya']:,.2f}
 
 ⚠️ TROYA RESUMEN:
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
@@ -801,9 +801,9 @@ def generar_mensaje_vendedor(datos):
 └─ Ticket TROYA: S/. {datos['ticket_troya']:,.2f}
 
 📅 RITMO DEL MES:
-├─ Días laborables transcurridos: {datos['dias_transcurridos']}
-├─ Días laborables restantes: {datos['dias_restantes']}
-└─ Venta promedio/día: S/. {datos['venta_promedio_diaria']:,.2f}
+├─ Días transcurridos: {datos['dias_transcurridos']}
+├─ Días restantes: {datos['dias_restantes']}
+└─ Venta x día: S/. {datos['venta_promedio_diaria']:,.2f}
 
 🚀 PROYECCIÓN AL CIERRE:
 ├─ Ventas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_proyectado']:.1f}%) {proyectado_emoji}
@@ -850,27 +850,27 @@ def generar_mensaje_jefe(datos):
 {ahora_local().strftime('%d/%m/%Y %H:%M')}
 
 🎯 OBJETIVOS MES:
-├─ Cuota Ventas: S/. {datos['cuota_ventas']:,.2f}
-└─ Cuota Cobertura: {datos['cuota_cobertura']} clientes
+├─ Ventas: S/. {datos['cuota_ventas']:,.2f}
+└─ Cobertura: {datos['cuota_cobertura']} clientes
 
 💼 DESEMPEÑO:
-├─ Ventas Actuales: S/. {datos['total_ventas']:,.2f}
-├─ Cumplimiento: {cumpl:.1f}% {cumplimiento_emoji}
+├─ Ventas: S/. {datos['total_ventas']:,.2f}
+├─ Avance: {cumpl:.1f}% {cumplimiento_emoji}
 ├─ Cobertura: {datos['cobertura']} clientes
-├─ Ticket Promedio: S/. {datos['ticket_promedio']:,.2f}
-└─ Ventas TROYA: S/. {datos['ventas_troya']:,.2f}
+├─ Ticket: S/. {datos['ticket_promedio']:,.2f}
+└─ TROYA: S/. {datos['ventas_troya']:,.2f}
 
 📋 LÍNEAS DE NEGOCIO:
 {lineas_txt if lineas_txt else '  • Sin ventas registradas'}
 ⚠️ RESUMEN TROYA:
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
 ├─ No Compraron: {datos['clientes_troya_no_compraron']} clientes
-└─ Ticket Promedio: S/. {datos['ticket_troya']:,.2f}
+└─ Ticket: S/. {datos['ticket_troya']:,.2f}
 
 📅 RITMO DEL MES:
-├─ Días laborables transcurridos: {datos['dias_transcurridos']}
-├─ Días laborables restantes: {datos['dias_restantes']}
-└─ Venta promedio/día: S/. {datos['venta_promedio_diaria']:,.2f}
+├─ Días transcurridos: {datos['dias_transcurridos']}
+├─ Días restantes: {datos['dias_restantes']}
+└─ Venta x día: S/. {datos['venta_promedio_diaria']:,.2f}
 
 🚀 PROYECCIÓN AL CIERRE:
 ├─ Ventas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_ventas_proyectado']:.1f}%) {proyectado_ventas_emoji}
