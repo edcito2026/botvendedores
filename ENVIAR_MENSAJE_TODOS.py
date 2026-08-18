@@ -33,7 +33,7 @@ API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 EXCEL_VENDEDORES = os.path.join(BASE_PATH, "vendedores.xlsx")
 
 # Plantilla Meta
-PLANTILLA_NOMBRE = "VENDEDORES"
+PLANTILLA_NOMBRE = "vendedor"
 
 # Mensaje directo (si no usas plantilla)
 MENSAJE_DIRECTO = """Hola! Soy el Bot de Ventas N&J 🤖
