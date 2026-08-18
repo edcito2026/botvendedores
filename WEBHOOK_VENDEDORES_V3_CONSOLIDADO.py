@@ -291,7 +291,7 @@ def es_jefe(rol=""):
 # 6. OBTENER CLIENTES TROYA
 # ============================================================
 
-def obtener_clientes_troya(codigo_vendedor):
+def obtener_clientes_troya(nombre_vendedor):
     """Obtiene clientes TROYA (Calif='D') del vendedor"""
     try:
         conn = sqlite3.connect(BD_PATH, timeout=15)
@@ -302,9 +302,9 @@ def obtener_clientes_troya(codigo_vendedor):
         cursor.execute("""
             SELECT Cod_Clie, Raz_Social, Giro
             FROM clientes
-            WHERE Calif = 'D' AND Cdg_Vend = ?
+            WHERE Calif = 'D' AND Vendedor = ?
             ORDER BY Raz_Social
-        """, (codigo_vendedor,))
+        """, (nombre_vendedor,))
 
         clientes = [dict(row) for row in cursor.fetchall()]
 
