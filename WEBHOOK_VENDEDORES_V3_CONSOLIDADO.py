@@ -326,8 +326,8 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE Cod_Clie = ? AND Periodo = ?
-                """, (cliente['Cod_Clie'], periodo_actual))
+                    WHERE CAST(Cod_Clie AS TEXT) = ? AND Periodo = ?
+                """, (str(cliente['Cod_Clie']), periodo_actual))
                 resultado_actual = cursor.fetchone()
                 venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
 
@@ -335,8 +335,8 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE Cod_Clie = ? AND Periodo = ?
-                """, (cliente['Cod_Clie'], periodo_anterior))
+                    WHERE CAST(Cod_Clie AS TEXT) = ? AND Periodo = ?
+                """, (str(cliente['Cod_Clie']), periodo_anterior))
                 resultado_anterior = cursor.fetchone()
                 venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
 
