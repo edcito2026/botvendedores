@@ -518,13 +518,7 @@ No hay clientes TROYA (Calif=D) registrados.
         datos = por_vendedor[vendedor]
         pct = (datos['con_compra'] / datos['total'] * 100) if datos['total'] > 0 else 0
         nombre_corto = vendedor.split()[0] if vendedor else vendedor
-        mensaje += f"
-{nombre_corto}
-"
-        mensaje += f"  Total: {datos['total']} | ✅ {datos['con_compra']} ({pct:.0f}%) | ❌ {datos['sin_compra']}"
-        datos = por_vendedor[vendedor]
-        pct = (datos['con_compra'] / datos['total'] * 100) if datos['total'] > 0 else 0
-        mensaje += f"\n{vendedor}\n"
+        mensaje += f"\n{nombre_corto}\n"
         mensaje += f"  Total: {datos['total']} | ✅ {datos['con_compra']} ({pct:.0f}%) | ❌ {datos['sin_compra']}"
 
     mensaje += """
