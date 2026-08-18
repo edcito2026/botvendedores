@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP - V3 CONSOLIDADO
+✨ QUERIES TROYA CORREGIDAS (CAST AS REAL, Cdg_Vend, ARCOR)
 
 ✨ NUEVAS CARACTERÍSTICAS:
 - Palabras clave: "RESUMEN" = reporte general, "TROYA" = reporte clientes TROYA
 - Reportes personalizados según rol: VENDEDOR vs JEFE/SUPERVISOR
 - Reporte TROYA: lista clientes Calif=D con split CON/SIN COMPRA
 - Gestión de créditos optimizada: UN SOLO servicio Render
+- QUERIES TROYA CORRECTAS: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
 
 Variables de entorno:
 WHATSAPP_ACCESS_TOKEN
@@ -82,7 +84,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join(LOG_DIR, "webhook_v3.log"), encoding="utf-8"),
+        logging.FileHandler(os.path.join(LOG_DIR, "webhook_v3_troya.log"), encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
@@ -289,11 +291,11 @@ def es_jefe(rol=""):
     return False
 
 # ============================================================
-# 6. OBTENER CLIENTES TROYA
+# 6. OBTENER CLIENTES TROYA - QUERIES CORREGIDAS
 # ============================================================
 
 def obtener_clientes_troya(nombre_vendedor):
-    """Obtiene clientes TROYA (Calif='D') del vendedor con ventas mes actual y anterior"""
+    """Obtiene clientes TROYA (Calif='D') con JOIN CORRECTO: CAST AS REAL"""
     try:
         logger.info(f"🔍 Buscando TROYA para: '{nombre_vendedor}'")
 
@@ -301,63 +303,53 @@ def obtener_clientes_troya(nombre_vendedor):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Obtener clientes CALIF=D
-        cursor.execute("""
-            SELECT Cod_Clie, Raz_Social, Dia_Sem
-            FROM clientes
-            WHERE Calif = 'D' AND Vendedor = ?
-            ORDER BY Raz_Social
-        """, (nombre_vendedor,))
-
-        clientes = [dict(row) for row in cursor.fetchall()]
-        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
-
-        # Período actual y anterior
         ahora = ahora_local()
         periodo_actual = f"{ahora.year}{ahora.month:02d}"
         mes_anterior = ahora.month - 1 if ahora.month > 1 else 12
         anio_anterior = ahora.year if ahora.month > 1 else ahora.year - 1
         periodo_anterior = f"{anio_anterior}{mes_anterior:02d}"
 
-        # Verificar compras mes actual y anterior
+        # Query CORRECTA: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
+        query = """
+        SELECT
+          c.Cod_Clie,
+          c.Raz_Social,
+          c.Vendedor,
+          c.DV,
+          c.Giro,
+          COALESCE(ROUND(SUM(CASE WHEN v_actual.Periodo = ? THEN v_actual.Imp_Total ELSE 0 END), 2), 0) as venta_actual,
+          COALESCE(ROUND(SUM(CASE WHEN v_anterior.Periodo = ? THEN v_anterior.Imp_Total ELSE 0 END), 2), 0) as venta_anterior
+        FROM clientes c
+        LEFT JOIN VENTAS2026 v_actual ON CAST(c.Cod_Clie AS REAL) = CAST(v_actual.Cod_Clie AS REAL)
+          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_actual.Cdg_Vend AS REAL)
+          AND v_actual.Proveedor = 'ARCOR'
+        LEFT JOIN VENTAS2026 v_anterior ON CAST(c.Cod_Clie AS REAL) = CAST(v_anterior.Cod_Clie AS REAL)
+          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_anterior.Cdg_Vend AS REAL)
+          AND v_anterior.Proveedor = 'ARCOR'
+        WHERE c.Calif = 'D'
+          AND c.Vendedor = ?
+        GROUP BY c.Cod_Clie, c.Raz_Social, c.Vendedor, c.DV, c.Giro
+        ORDER BY venta_actual DESC, c.Raz_Social
+        """
+
+        cursor.execute(query, (periodo_actual, periodo_anterior, nombre_vendedor))
+        clientes = [dict(row) for row in cursor.fetchall()]
+
+        # Agregar flag tiene_compras
         for cliente in clientes:
-            try:
-                # Ventas mes actual
-                cursor.execute("""
-                    SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
-                    FROM VENTAS2026
-                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
-                """, (cliente['Raz_Social'], nombre_vendedor, periodo_actual))
-                resultado_actual = cursor.fetchone()
-                venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
+            cliente['tiene_compras'] = cliente['venta_actual'] > 0
 
-                # Ventas mes anterior
-                cursor.execute("""
-                    SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
-                    FROM VENTAS2026
-                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
-                """, (cliente['Raz_Social'], nombre_vendedor, periodo_anterior))
-                resultado_anterior = cursor.fetchone()
-                venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
-
-                cliente['tiene_compras'] = venta_actual > 0
-                cliente['venta_actual'] = venta_actual
-                cliente['venta_anterior'] = venta_anterior
-            except Exception as e:
-                logger.error(f"❌ Error verificando compras para {cliente['Raz_Social']}: {e}")
-                cliente['tiene_compras'] = False
-                cliente['venta_actual'] = 0
-                cliente['venta_anterior'] = 0
-
+        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
         conn.close()
         return clientes
+
     except Exception as e:
         logger.error(f"❌ Error obteniendo clientes TROYA: {e}")
         return []
 
 
 def obtener_clientes_troya_generales():
-    """Obtiene clientes TROYA (Calif='D') de TODOS los vendedores"""
+    """Obtiene clientes TROYA de TODOS los vendedores - QUERY CORRECTA"""
     try:
         logger.info("🔍 Buscando TROYA GENERAL para todos los vendedores")
 
@@ -365,38 +357,38 @@ def obtener_clientes_troya_generales():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Obtener todos los clientes CALIF=D
-        cursor.execute("""
-            SELECT Cod_Clie, Raz_Social, Vendedor
-            FROM clientes
-            WHERE Calif = 'D'
-            ORDER BY Vendedor, Raz_Social
-        """)
-
-        clientes = [dict(row) for row in cursor.fetchall()]
-        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL")
-
-        # Período actual
         ahora = ahora_local()
-        periodo = f"{ahora.year}{ahora.month:02d}"
+        periodo_actual = f"{ahora.year}{ahora.month:02d}"
 
-        # Verificar compras
+        # Query CORRECTA: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
+        query = """
+        SELECT
+          c.Cod_Clie,
+          c.Raz_Social,
+          c.Vendedor,
+          c.DV,
+          COALESCE(ROUND(SUM(v.Imp_Total), 2), 0) as venta_actual
+        FROM clientes c
+        LEFT JOIN VENTAS2026 v ON CAST(c.Cod_Clie AS REAL) = CAST(v.Cod_Clie AS REAL)
+          AND CAST(c.Cdg_Vend AS REAL) = CAST(v.Cdg_Vend AS REAL)
+          AND v.Periodo = ?
+          AND v.Proveedor = 'ARCOR'
+        WHERE c.Calif = 'D'
+        GROUP BY c.Cod_Clie, c.Raz_Social, c.Vendedor, c.DV
+        ORDER BY c.Vendedor, venta_actual DESC, c.Raz_Social
+        """
+
+        cursor.execute(query, (periodo_actual,))
+        clientes = [dict(row) for row in cursor.fetchall()]
+
+        # Agregar flag tiene_compras
         for cliente in clientes:
-            try:
-                cursor.execute("""
-                    SELECT COUNT(*) as total_compras
-                    FROM VENTAS2026
-                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
-                """, (cliente['Raz_Social'], cliente['Vendedor'], periodo))
-                resultado = cursor.fetchone()
-                total_compras = resultado['total_compras'] if resultado else 0
-                cliente['tiene_compras'] = total_compras > 0
-            except Exception as e:
-                logger.error(f"❌ Error verificando compras para {cliente['Raz_Social']}: {e}")
-                cliente['tiene_compras'] = False
+            cliente['tiene_compras'] = cliente['venta_actual'] > 0
 
+        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL")
         conn.close()
         return clientes
+
     except Exception as e:
         logger.error(f"❌ Error obteniendo clientes TROYA generales: {e}")
         return []
@@ -451,12 +443,12 @@ No tienes clientes TROYA (Calif=D) registrados actualmente.
         mensaje += f"\n❌ SIN COMPRA\n"
         for cliente in sin_compra_list:
             cliente_nombre = cliente['Raz_Social'].strip().title()[:16]
-            dia = cliente.get('Dia_Sem', 'N/A')
+            dia = cliente.get('DV', 'N/A')
             venta_ant = cliente.get('venta_anterior', 0)
             if venta_ant > 0:
-                mensaje += f"{cliente_nombre} {dia[:3]} S/.{venta_ant:.0f}\n"
+                mensaje += f"{cliente_nombre} {dia} S/.{venta_ant:.0f}\n"
             else:
-                mensaje += f"{cliente_nombre} {dia[:3]}\n"
+                mensaje += f"{cliente_nombre} {dia}\n"
 
     # Resumen
     diferencia = total_actual - total_anterior
@@ -517,8 +509,7 @@ No hay clientes TROYA (Calif=D) registrados.
     for vendedor in sorted(por_vendedor.keys()):
         datos = por_vendedor[vendedor]
         pct = (datos['con_compra'] / datos['total'] * 100) if datos['total'] > 0 else 0
-        nombre_corto = vendedor.split()[0] if vendedor else vendedor
-        mensaje += f"\n{nombre_corto}\n"
+        mensaje += f"\n{vendedor}\n"
         mensaje += f"  Total: {datos['total']} | ✅ {datos['con_compra']} ({pct:.0f}%) | ❌ {datos['sin_compra']}"
 
     mensaje += """
@@ -1024,7 +1015,7 @@ def status():
         "status": "active",
         "timestamp": ctx["ahora"].isoformat(),
         "webhook": "/webhook",
-        "version": "V3 Consolidado",
+        "version": "V3 TROYA Correcto",
         "periodo": ctx["periodo"],
         "palabras_clave": ["RESUMEN", "TROYA"],
     }), 200
@@ -1035,7 +1026,7 @@ def status():
 
 if __name__ == "__main__":
     logger.info("=" * 70)
-    logger.info("🚀 WEBHOOK V3 CONSOLIDADO - RESUMEN + TROYA")
+    logger.info("🚀 WEBHOOK V3 CONSOLIDADO - QUERIES TROYA CORREGIDAS")
     logger.info("=" * 70)
     ctx = obtener_contexto_periodo()
     dias = calcular_dias_laborables_periodo()
@@ -1044,6 +1035,7 @@ if __name__ == "__main__":
     logger.info(f"BD: {BD_PATH}")
     logger.info(f"Excel: {EXCEL_VENDEDORES}")
     logger.info("Palabras clave: RESUMEN | TROYA")
+    logger.info("QUERIES TROYA: CAST AS REAL | Cdg_Vend | ARCOR")
     logger.info("=" * 70)
 
     inicializar_bd()
