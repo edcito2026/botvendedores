@@ -326,8 +326,8 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE CAST(Cod_Clie AS TEXT) = ? AND Periodo = ?
-                """, (str(cliente['Cod_Clie']), periodo_actual))
+                    WHERE Cliente = ? AND Periodo = ?
+                """, (cliente['Raz_Social'], periodo_actual))
                 resultado_actual = cursor.fetchone()
                 venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
 
@@ -335,8 +335,8 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE CAST(Cod_Clie AS TEXT) = ? AND Periodo = ?
-                """, (str(cliente['Cod_Clie']), periodo_anterior))
+                    WHERE Cliente = ? AND Periodo = ?
+                """, (cliente['Raz_Social'], periodo_anterior))
                 resultado_anterior = cursor.fetchone()
                 venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
 
@@ -344,7 +344,7 @@ def obtener_clientes_troya(nombre_vendedor):
                 cliente['venta_actual'] = venta_actual
                 cliente['venta_anterior'] = venta_anterior
             except Exception as e:
-                logger.error(f"❌ Error verificando compras para {cliente['Cod_Clie']}: {e}")
+                logger.error(f"❌ Error verificando compras para {cliente['Raz_Social']}: {e}")
                 cliente['tiene_compras'] = False
                 cliente['venta_actual'] = 0
                 cliente['venta_anterior'] = 0
