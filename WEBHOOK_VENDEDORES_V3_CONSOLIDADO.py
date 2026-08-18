@@ -284,7 +284,8 @@ def validar_vendedor(numero_telefonico):
 def es_jefe(rol=""):
     rol = (rol or "").strip().upper()
     if rol:
-        return rol in {"JEFE", "SUPERVISOR", "GERENTE", "COORDINADOR"}
+        palabras_clave = {"JEFE", "SUPERVISOR", "GERENTE", "COORDINADOR"}
+        return any(palabra in rol for palabra in palabras_clave)
     return False
 
 # ============================================================
@@ -292,7 +293,7 @@ def es_jefe(rol=""):
 # ============================================================
 
 def obtener_clientes_troya(nombre_vendedor):
-    """Obtiene clientes TROYA (Calif='D') del vendedor"""
+    """Obtiene clientes TROYA (Calif='D') del vendedor con ventas mes actual y anterior"""
     try:
         logger.info(f"🔍 Buscando TROYA para: '{nombre_vendedor}'")
 
@@ -302,7 +303,7 @@ def obtener_clientes_troya(nombre_vendedor):
 
         # Obtener clientes CALIF=D
         cursor.execute("""
-            SELECT Cod_Clie, Raz_Social, Giro
+            SELECT Cod_Clie, Raz_Social, Dia_Sem
             FROM clientes
             WHERE Calif = 'D' AND Vendedor = ?
             ORDER BY Raz_Social
@@ -311,24 +312,42 @@ def obtener_clientes_troya(nombre_vendedor):
         clientes = [dict(row) for row in cursor.fetchall()]
         logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
 
-        # Período actual
+        # Período actual y anterior
         ahora = ahora_local()
-        periodo = f"{ahora.year}{ahora.month:02d}"
-        tabla_ventas = f"VENTAS{ahora.year}"
+        periodo_actual = f"{ahora.year}{ahora.month:02d}"
+        mes_anterior = ahora.month - 1 if ahora.month > 1 else 12
+        anio_anterior = ahora.year if ahora.month > 1 else ahora.year - 1
+        periodo_anterior = f"{anio_anterior}{mes_anterior:02d}"
 
-        # Verificar compras
+        # Verificar compras mes actual y anterior
         for cliente in clientes:
             try:
-                cursor.execute(f"""
-                    SELECT COUNT(*) as total_compras
-                    FROM {tabla_ventas}
-                    WHERE Cod_Clie = ? AND strftime('%Y%m', Fecha) = ?
-                """, (cliente['Cod_Clie'], periodo))
-                resultado = cursor.fetchone()
-                total_compras = resultado['total_compras'] if resultado else 0
-                cliente['tiene_compras'] = total_compras > 0
-            except:
+                # Ventas mes actual
+                cursor.execute("""
+                    SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
+                    FROM VENTAS2026
+                    WHERE Cod_Clie = ? AND Periodo = ?
+                """, (cliente['Cod_Clie'], periodo_actual))
+                resultado_actual = cursor.fetchone()
+                venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
+
+                # Ventas mes anterior
+                cursor.execute("""
+                    SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
+                    FROM VENTAS2026
+                    WHERE Cod_Clie = ? AND Periodo = ?
+                """, (cliente['Cod_Clie'], periodo_anterior))
+                resultado_anterior = cursor.fetchone()
+                venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
+
+                cliente['tiene_compras'] = venta_actual > 0
+                cliente['venta_actual'] = venta_actual
+                cliente['venta_anterior'] = venta_anterior
+            except Exception as e:
+                logger.error(f"❌ Error verificando compras para {cliente['Cod_Clie']}: {e}")
                 cliente['tiene_compras'] = False
+                cliente['venta_actual'] = 0
+                cliente['venta_anterior'] = 0
 
         conn.close()
         return clientes
@@ -365,15 +384,16 @@ def obtener_clientes_troya_generales():
         # Verificar compras
         for cliente in clientes:
             try:
-                cursor.execute(f"""
+                cursor.execute("""
                     SELECT COUNT(*) as total_compras
-                    FROM {tabla_ventas}
-                    WHERE Cod_Clie = ? AND strftime('%Y%m', Fecha) = ?
+                    FROM VENTAS2026
+                    WHERE Cod_Clie = ? AND Periodo = ?
                 """, (cliente['Cod_Clie'], periodo))
                 resultado = cursor.fetchone()
                 total_compras = resultado['total_compras'] if resultado else 0
                 cliente['tiene_compras'] = total_compras > 0
-            except:
+            except Exception as e:
+                logger.error(f"❌ Error verificando compras para {cliente['Cod_Clie']}: {e}")
                 cliente['tiene_compras'] = False
 
         conn.close()
@@ -387,7 +407,7 @@ def obtener_clientes_troya_generales():
 # ============================================================
 
 def generar_mensaje_troya(vendedor, clientes):
-    """Genera reporte personalizado de clientes TROYA"""
+    """Genera reporte personalizado de clientes TROYA (formato compacto)"""
 
     if not clientes:
         return f"""Hola {vendedor.get('nombre', 'Vendedor')}, 👋
@@ -403,43 +423,52 @@ No tienes clientes TROYA (Calif=D) registrados actualmente.
 
     ahora = ahora_local()
     mes_nombre = MESES_ES[ahora.month - 1]
+    mes_anterior = ahora.month - 1 if ahora.month > 1 else 12
+    mes_anterior_nombre = MESES_ES[mes_anterior - 1]
 
-    mensaje = f"""👤 HOLA {nombre}
-📅 {mes_nombre} {ahora.year}
+    # Totales
+    total_actual = sum(c.get('venta_actual', 0) for c in clientes)
+    total_anterior = sum(c.get('venta_anterior', 0) for c in clientes)
 
-📊 TUS CLIENTES TROYA:
-Total: {cantidad} clientes especiales
-✅ {con_compra} CON COMPRA (activos)
-❌ {sin_compra} SIN COMPRA (reactivar)
+    mensaje = f"""👤 {nombre}
+📅 {mes_nombre} 2026 | {cantidad} TROYA (✅{con_compra} ❌{sin_compra})
 
+✅ CON COMPRA
 """
 
-    # Clientes CON COMPRA
+    # Clientes CON COMPRA con headers
     con_compra_list = [c for c in clientes if c.get('tiene_compras')]
     if con_compra_list:
-        mensaje += "✅ CON COMPRA (MANTENER):\n"
-        for idx, cliente in enumerate(con_compra_list, 1):
-            cliente_nombre = cliente['Raz_Social'].strip().title()
-            giro = cliente.get('Giro', '').strip().lower() if cliente.get('Giro') else ''
-            mensaje += f"{idx}. {cliente_nombre} ({giro})\n"
+        mensaje += f"{mes_anterior_nombre:<8} {mes_nombre:<8}\n"
+        for cliente in con_compra_list:
+            cliente_nombre = cliente['Raz_Social'].strip().title()[:20]
+            venta_ant = cliente.get('venta_anterior', 0)
+            venta_act = cliente.get('venta_actual', 0)
+            mensaje += f"S/.{venta_ant:<4.0f} S/.{venta_act:<4.0f} {cliente_nombre}\n"
 
     # Clientes SIN COMPRA
     sin_compra_list = [c for c in clientes if not c.get('tiene_compras')]
     if sin_compra_list:
-        mensaje += "\n❌ SIN COMPRA (REACTIVAR):\n"
-        for idx, cliente in enumerate(sin_compra_list, 1):
-            cliente_nombre = cliente['Raz_Social'].strip().title()
-            giro = cliente.get('Giro', '').strip().lower() if cliente.get('Giro') else ''
-            mensaje += f"{idx}. {cliente_nombre} ({giro})\n"
+        mensaje += f"\n❌ SIN COMPRA\n"
+        for cliente in sin_compra_list:
+            cliente_nombre = cliente['Raz_Social'].strip().title()[:16]
+            dia = cliente.get('Dia_Sem', 'N/A')
+            venta_ant = cliente.get('venta_anterior', 0)
+            if venta_ant > 0:
+                mensaje += f"{cliente_nombre} {dia[:3]} S/.{venta_ant:.0f}\n"
+            else:
+                mensaje += f"{cliente_nombre} {dia[:3]}\n"
 
-    mensaje += """
-📈 ACCIONES:
-1️⃣ Contacta activos
-2️⃣ Reactiva sin compra
-3️⃣ Envía promociones
-4️⃣ Cierra la venta
+    # Resumen
+    diferencia = total_actual - total_anterior
+    pct = (diferencia / total_anterior * 100) if total_anterior > 0 else 0
 
-🤖 Bot N&J"""
+    mensaje += f"\n📊 Totales: S/.{total_anterior:.0f} → S/.{total_actual:.0f}"
+    if pct != 0:
+        emoji = "📈" if pct > 0 else "📉"
+        mensaje += f" {emoji} {pct:+.0f}%"
+
+    mensaje += "\n\n🤖 Bot N&J"
 
     return mensaje
 
