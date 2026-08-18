@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP - V3 CONSOLIDADO
-✨ QUERIES TROYA CORREGIDAS (CAST AS REAL, Cdg_Vend, ARCOR)
+WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP - V3 CONSOLIDADO - FIXED
+🔧 FIX: Agregado AND Proveedor = 'ARCOR' en obtener_clientes_troya()
 
 ✨ NUEVAS CARACTERÍSTICAS:
 - Palabras clave: "RESUMEN" = reporte general, "TROYA" = reporte clientes TROYA
 - Reportes personalizados según rol: VENDEDOR vs JEFE/SUPERVISOR
 - Reporte TROYA: lista clientes Calif=D con split CON/SIN COMPRA
 - Gestión de créditos optimizada: UN SOLO servicio Render
-- QUERIES TROYA CORRECTAS: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
 
 Variables de entorno:
 WHATSAPP_ACCESS_TOKEN
@@ -18,7 +17,7 @@ WHATSAPP_VERIFY_TOKEN
 WHATSAPP_API_VERSION (default v25.0)
 BD_PATH (default ventas.db)
 EXCEL_VENDEDORES (default vendedores.xlsx)
-DIAS_LABORABLES (default 0,1,2,3,4,5)
+DIAS_LABORABLES: lunes a sábado; domingo y feriados de FERIADOS.xlsx no laborables
 """
 
 from flask import Flask, request, jsonify
@@ -55,18 +54,57 @@ API_URL = f"https://graph.facebook.com/{API_VERSION}/{PHONE_NUMBER_ID}/messages"
 
 BD_PATH = os.environ.get("BD_PATH", os.path.join(BASE_PATH, "ventas.db"))
 EXCEL_VENDEDORES = os.environ.get("EXCEL_VENDEDORES", os.path.join(BASE_PATH, "vendedores.xlsx"))
+FERIADOS_XLSX = os.environ.get("FERIADOS_XLSX", os.path.join(BASE_PATH, "FERIADOS.xlsx"))
 
 def cargar_dias_laborables():
-    valor = os.environ.get("DIAS_LABORABLES", "0,1,2,3,4,5")
-    try:
-        dias = {int(x.strip()) for x in valor.split(",") if x.strip() != ""}
-        if not dias.issubset(set(range(7))):
-            raise ValueError
-        return dias
-    except ValueError:
-        raise RuntimeError("DIAS_LABORABLES inválido. Ejemplo: 0,1,2,3,4,5")
+    # Lunes a sábado; domingo siempre no laborable.
+    return {0, 1, 2, 3, 4, 5}
+
 
 DIAS_LABORABLES = cargar_dias_laborables()
+
+_FERIADOS_CACHE = {"mtime": None, "fechas": set()}
+_FERIADOS_LOCK = Lock()
+
+
+def cargar_feriados():
+    """Carga fechas no laborables desde FERIADOS.xlsx."""
+    try:
+        mtime = os.path.getmtime(FERIADOS_XLSX)
+        with _FERIADOS_LOCK:
+            if mtime == _FERIADOS_CACHE.get("mtime"):
+                return _FERIADOS_CACHE.get("fechas", set())
+
+        wb = openpyxl.load_workbook(FERIADOS_XLSX, read_only=True, data_only=True)
+        fechas = set()
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                for valor in row:
+                    if isinstance(valor, datetime):
+                        fechas.add(valor.date())
+                    elif isinstance(valor, date):
+                        fechas.add(valor)
+                    elif isinstance(valor, str):
+                        texto = valor.strip()
+                        for formato in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                            try:
+                                fechas.add(datetime.strptime(texto, formato).date())
+                                break
+                            except ValueError:
+                                pass
+        wb.close()
+        with _FERIADOS_LOCK:
+            _FERIADOS_CACHE["mtime"] = mtime
+            _FERIADOS_CACHE["fechas"] = fechas
+        logger.info(f"✅ {len(fechas)} feriados cargados desde {FERIADOS_XLSX}")
+        return fechas
+    except FileNotFoundError:
+        logger.warning(f"⚠️ No se encontró FERIADOS.xlsx: {FERIADOS_XLSX}. Se considerará solo domingo no laborable.")
+        return set()
+    except Exception as e:
+        logger.error(f"❌ Error leyendo FERIADOS.xlsx: {e}")
+        return set()
+
 
 try:
     TZ_LIMA = ZoneInfo("America/Lima")
@@ -84,11 +122,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(os.path.join(LOG_DIR, "webhook_v3_troya.log"), encoding="utf-8"),
+        logging.FileHandler(os.path.join(LOG_DIR, "webhook_v3.log"), encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+
+FERIADOS = cargar_feriados()
 
 app = Flask(__name__)
 
@@ -132,7 +172,7 @@ def calcular_dias_laborables_periodo():
     transcurridos = restantes = total = 0
     fecha = primer_dia
     while fecha <= ultimo_dia:
-        if fecha.weekday() in DIAS_LABORABLES:
+        if fecha.weekday() in DIAS_LABORABLES and fecha not in FERIADOS:
             total += 1
             if fecha <= fecha_corte:
                 transcurridos += 1
@@ -204,7 +244,7 @@ def reclamar_message_id(message_id, telefono):
         return cursor.rowcount == 1
     except Exception as e:
         logger.error(f"❌ Error registrando message_id: {e}")
-        return True
+        return False
     finally:
         if conn:
             conn.close()
@@ -291,11 +331,11 @@ def es_jefe(rol=""):
     return False
 
 # ============================================================
-# 6. OBTENER CLIENTES TROYA - QUERIES CORREGIDAS
+# 6. OBTENER CLIENTES TROYA - 🔧 FIXED
 # ============================================================
 
 def obtener_clientes_troya(nombre_vendedor):
-    """Obtiene clientes TROYA (Calif='D') con JOIN CORRECTO: CAST AS REAL"""
+    """Obtiene clientes TROYA (Calif='D') del vendedor con ventas mes actual y anterior - SOLO ARCOR"""
     try:
         logger.info(f"🔍 Buscando TROYA para: '{nombre_vendedor}'")
 
@@ -303,53 +343,63 @@ def obtener_clientes_troya(nombre_vendedor):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
+        # Obtener clientes CALIF=D
+        cursor.execute("""
+            SELECT Cod_Clie, Raz_Social, Dia_Sem
+            FROM clientes
+            WHERE Calif = 'D' AND Vendedor = ?
+            ORDER BY Raz_Social
+        """, (nombre_vendedor,))
+
+        clientes = [dict(row) for row in cursor.fetchall()]
+        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
+
+        # Período actual y anterior
         ahora = ahora_local()
         periodo_actual = f"{ahora.year}{ahora.month:02d}"
         mes_anterior = ahora.month - 1 if ahora.month > 1 else 12
         anio_anterior = ahora.year if ahora.month > 1 else ahora.year - 1
         periodo_anterior = f"{anio_anterior}{mes_anterior:02d}"
 
-        # Query CORRECTA: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
-        query = """
-        SELECT
-          c.Cod_Clie,
-          c.Raz_Social,
-          c.Vendedor,
-          c.DV,
-          c.Giro,
-          COALESCE(ROUND(SUM(CASE WHEN v_actual.Periodo = ? THEN v_actual.Imp_Total ELSE 0 END), 2), 0) as venta_actual,
-          COALESCE(ROUND(SUM(CASE WHEN v_anterior.Periodo = ? THEN v_anterior.Imp_Total ELSE 0 END), 2), 0) as venta_anterior
-        FROM clientes c
-        LEFT JOIN VENTAS2026 v_actual ON CAST(c.Cod_Clie AS REAL) = CAST(v_actual.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_actual.Cdg_Vend AS REAL)
-          AND v_actual.Proveedor = 'ARCOR'
-        LEFT JOIN VENTAS2026 v_anterior ON CAST(c.Cod_Clie AS REAL) = CAST(v_anterior.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_anterior.Cdg_Vend AS REAL)
-          AND v_anterior.Proveedor = 'ARCOR'
-        WHERE c.Calif = 'D'
-          AND c.Vendedor = ?
-        GROUP BY c.Cod_Clie, c.Raz_Social, c.Vendedor, c.DV, c.Giro
-        ORDER BY venta_actual DESC, c.Raz_Social
-        """
-
-        cursor.execute(query, (periodo_actual, periodo_anterior, nombre_vendedor))
-        clientes = [dict(row) for row in cursor.fetchall()]
-
-        # Agregar flag tiene_compras
+        # Verificar compras mes actual y anterior - FILTRANDO POR ARCOR ✅
         for cliente in clientes:
-            cliente['tiene_compras'] = cliente['venta_actual'] > 0
+            try:
+                # Ventas mes actual - ARCOR ONLY
+                cursor.execute("""
+                    SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
+                    FROM VENTAS2026
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR'
+                """, (cliente['Raz_Social'], nombre_vendedor, periodo_actual))
+                resultado_actual = cursor.fetchone()
+                venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
 
-        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
+                # Ventas mes anterior - ARCOR ONLY
+                cursor.execute("""
+                    SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
+                    FROM VENTAS2026
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR'
+                """, (cliente['Raz_Social'], nombre_vendedor, periodo_anterior))
+                resultado_anterior = cursor.fetchone()
+                venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
+
+                cliente['tiene_compras'] = venta_actual > 0
+                cliente['venta_actual'] = venta_actual
+                cliente['venta_anterior'] = venta_anterior
+            except Exception as e:
+                logger.error(f"❌ Error verificando compras para {cliente['Raz_Social']}: {e}")
+                cliente['tiene_compras'] = False
+                cliente['venta_actual'] = 0
+                cliente['venta_anterior'] = 0
+
         conn.close()
         return clientes
-
     except Exception as e:
         logger.error(f"❌ Error obteniendo clientes TROYA: {e}")
         return []
 
 
 def obtener_clientes_troya_generales():
-    """Obtiene clientes TROYA de TODOS los vendedores - QUERY CORRECTA"""
+    """Obtiene clientes TROYA (Calif='D') de TODOS los vendedores"""
     try:
         logger.info("🔍 Buscando TROYA GENERAL para todos los vendedores")
 
@@ -357,38 +407,38 @@ def obtener_clientes_troya_generales():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        ahora = ahora_local()
-        periodo_actual = f"{ahora.year}{ahora.month:02d}"
+        # Obtener todos los clientes CALIF=D
+        cursor.execute("""
+            SELECT c.Cod_Clie, c.Raz_Social, c.Vendedor
+            FROM clientes c
+            WHERE c.Calif = 'D'
+            ORDER BY c.Vendedor, c.Raz_Social
+        """)
 
-        # Query CORRECTA: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
-        query = """
-        SELECT
-          c.Cod_Clie,
-          c.Raz_Social,
-          c.Vendedor,
-          c.DV,
-          COALESCE(ROUND(SUM(v.Imp_Total), 2), 0) as venta_actual
-        FROM clientes c
-        LEFT JOIN VENTAS2026 v ON CAST(c.Cod_Clie AS REAL) = CAST(v.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v.Cdg_Vend AS REAL)
-          AND v.Periodo = ?
-          AND v.Proveedor = 'ARCOR'
-        WHERE c.Calif = 'D'
-        GROUP BY c.Cod_Clie, c.Raz_Social, c.Vendedor, c.DV
-        ORDER BY c.Vendedor, venta_actual DESC, c.Raz_Social
-        """
-
-        cursor.execute(query, (periodo_actual,))
         clientes = [dict(row) for row in cursor.fetchall()]
-
-        # Agregar flag tiene_compras
-        for cliente in clientes:
-            cliente['tiene_compras'] = cliente['venta_actual'] > 0
-
         logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL")
+
+        # Período actual
+        ahora = ahora_local()
+        periodo = f"{ahora.year}{ahora.month:02d}"
+
+        # Verificar compras
+        for cliente in clientes:
+            try:
+                cursor.execute("""
+                    SELECT COUNT(*) as total_compras
+                    FROM VENTAS2026
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR'
+                """, (cliente['Raz_Social'], cliente['Vendedor'], periodo))
+                resultado = cursor.fetchone()
+                total_compras = resultado['total_compras'] if resultado else 0
+                cliente['tiene_compras'] = total_compras > 0
+            except Exception as e:
+                logger.error(f"❌ Error verificando compras para {cliente['Raz_Social']}: {e}")
+                cliente['tiene_compras'] = False
+
         conn.close()
         return clientes
-
     except Exception as e:
         logger.error(f"❌ Error obteniendo clientes TROYA generales: {e}")
         return []
@@ -443,12 +493,12 @@ No tienes clientes TROYA (Calif=D) registrados actualmente.
         mensaje += f"\n❌ SIN COMPRA\n"
         for cliente in sin_compra_list:
             cliente_nombre = cliente['Raz_Social'].strip().title()[:16]
-            dia = cliente.get('DV', 'N/A')
+            dia = cliente.get('Dia_Sem', 'N/A')
             venta_ant = cliente.get('venta_anterior', 0)
             if venta_ant > 0:
-                mensaje += f"{cliente_nombre} {dia} S/.{venta_ant:.0f}\n"
+                mensaje += f"{cliente_nombre} {dia[:3]} S/.{venta_ant:.0f}\n"
             else:
-                mensaje += f"{cliente_nombre} {dia}\n"
+                mensaje += f"{cliente_nombre} {dia[:3]}\n"
 
     # Resumen
     diferencia = total_actual - total_anterior
@@ -892,116 +942,110 @@ def verificar_webhook():
 
 @app.route("/webhook", methods=["POST"])
 def recibir_mensaje():
-    """Recibe mensajes y responde según palabra clave"""
+    """Recibe mensajes y responde según palabra clave, procesando todos los eventos."""
     try:
         data = request.get_json(silent=True) or {}
-
-        if "entry" not in data or not data["entry"]:
+        entries = data.get("entry") or []
+        if not entries:
             return jsonify({"status": "ok"}), 200
 
-        entrada = data["entry"][0]
-        cambios = entrada.get("changes") or []
-        if not cambios:
-            return jsonify({"status": "ok"}), 200
+        procesados = 0
+        duplicados = 0
+        errores_envio = 0
 
-        cambio = cambios[0].get("value") or {}
-        mensajes = cambio.get("messages") or []
-        if not mensajes:
-            return jsonify({"status": "ok"}), 200
+        for entrada in entries:
+            for cambio_item in (entrada.get("changes") or []):
+                cambio = cambio_item.get("value") or {}
+                mensajes = cambio.get("messages") or []
 
-        mensaje_obj = mensajes[0]
-        message_id = mensaje_obj.get("id")
-        numero_remitente = mensaje_obj.get("from", "")
-        tipo = mensaje_obj.get("type")
+                for mensaje_obj in mensajes:
+                    message_id = mensaje_obj.get("id")
+                    numero_remitente = mensaje_obj.get("from", "")
+                    tipo = mensaje_obj.get("type")
 
-        if tipo != "text":
-            return jsonify({"status": "ok"}), 200
+                    if tipo != "text":
+                        continue
 
-        texto_mensaje = (mensaje_obj.get("text", {}).get("body", "").strip()).upper()
-        logger.info(f"📨 Mensaje de *{numero_remitente[-4:]}: {texto_mensaje[:50]}")
+                    texto_mensaje = (mensaje_obj.get("text", {}).get("body", "").strip()).upper()
+                    logger.info(f"📨 Mensaje de *{numero_remitente[-4:]}: {texto_mensaje[:50]}")
 
-        # Detectar palabra clave: RESUMEN o TROYA
-        palabra_detectada = None
-        if "RESUMEN" in texto_mensaje:
-            palabra_detectada = "RESUMEN"
-        elif "TROYA" in texto_mensaje:
-            palabra_detectada = "TROYA"
+                    palabra_detectada = None
+                    if "RESUMEN" in texto_mensaje:
+                        palabra_detectada = "RESUMEN"
+                    elif "TROYA" in texto_mensaje:
+                        palabra_detectada = "TROYA"
 
-        if not palabra_detectada:
-            logger.info("⊘ Sin palabra clave")
-            return jsonify({"status": "ok"}), 200
+                    if not palabra_detectada:
+                        logger.info("⊘ Sin palabra clave")
+                        continue
 
-        # Evitar duplicados
-        if message_id and not reclamar_message_id(message_id, numero_remitente):
-            logger.info(f"♻️ Webhook duplicado")
-            return jsonify({"status": "duplicate"}), 200
+                    if message_id and not reclamar_message_id(message_id, numero_remitente):
+                        logger.info(f"♻️ Webhook duplicado: {message_id}")
+                        duplicados += 1
+                        continue
 
-        logger.info(f"✅ Palabra clave: {palabra_detectada}")
+                    procesados += 1
+                    logger.info(f"✅ Palabra clave: {palabra_detectada}")
 
-        # Validar vendedor
-        es_valido, datos_usuario = validar_vendedor(numero_remitente)
+                    es_valido, datos_usuario = validar_vendedor(numero_remitente)
 
-        if not es_valido:
-            enviar_mensaje_whatsapp(numero_remitente, "❌ No autorizado. Contacta a tu supervisor.")
-            return jsonify({"status": "unauthorized"}), 200
+                    if not es_valido:
+                        enviar_mensaje_whatsapp(numero_remitente, "❌ No autorizado. Contacta a tu supervisor.")
+                        continue
 
-        nombre_usuario = datos_usuario["nombre"]
-        codigo_usuario = datos_usuario.get("codigo", nombre_usuario)
-        rol = datos_usuario.get("rol", "")
+                    nombre_usuario = datos_usuario["nombre"]
+                    rol = datos_usuario.get("rol", "")
 
-        # ========== PALABRA CLAVE: TROYA ==========
-        if palabra_detectada == "TROYA":
-            es_jefe_supervisor = es_jefe(rol)
+                    if palabra_detectada == "TROYA":
+                        es_jefe_supervisor = es_jefe(rol)
 
-            if es_jefe_supervisor:
-                logger.info(f"👔 Jefe/Supervisor solicita TROYA: {nombre_usuario}")
-                clientes_troya = obtener_clientes_troya_generales()
-                mensaje = generar_mensaje_troya_jefe(clientes_troya)
-            else:
-                logger.info(f"👤 Vendedor solicita TROYA: {nombre_usuario}")
-                clientes_troya = obtener_clientes_troya(nombre_usuario)
-                mensaje = generar_mensaje_troya(datos_usuario, clientes_troya)
+                        if es_jefe_supervisor:
+                            logger.info(f"👔 Jefe/Supervisor solicita TROYA: {nombre_usuario}")
+                            clientes_troya = obtener_clientes_troya_generales()
+                            mensaje = generar_mensaje_troya_jefe(clientes_troya)
+                        else:
+                            logger.info(f"👤 Vendedor solicita TROYA: {nombre_usuario}")
+                            clientes_troya = obtener_clientes_troya(nombre_usuario)
+                            mensaje = generar_mensaje_troya(datos_usuario, clientes_troya)
 
-            if not mensaje:
-                mensaje = "⚠️ Error generando reporte TROYA"
+                        if not mensaje:
+                            mensaje = "⚠️ Error generando reporte TROYA"
 
-            exito = enviar_mensaje_whatsapp(numero_remitente, mensaje)
+                        if not enviar_mensaje_whatsapp(numero_remitente, mensaje):
+                            errores_envio += 1
+                            logger.error(f"❌ No se pudo enviar TROYA a {nombre_usuario}; message_id conservado para evitar duplicado")
+                        else:
+                            logger.info(f"✅ Reporte TROYA enviado a {nombre_usuario}")
+                        continue
 
-            if exito:
-                logger.info(f"✅ Reporte TROYA enviado a {nombre_usuario}")
-                return jsonify({"status": "success"}), 200
+                    es_jefe_supervisor = es_jefe(rol)
+                    if es_jefe_supervisor:
+                        logger.info(f"👔 Jefe/Supervisor: {nombre_usuario}")
+                        datos = obtener_datos_generales()
+                        mensaje = generar_mensaje_jefe(datos)
+                    else:
+                        logger.info(f"👤 Vendedor: {nombre_usuario}")
+                        datos = obtener_datos_vendedor(nombre_usuario)
+                        mensaje = generar_mensaje_vendedor(datos)
 
-            liberar_message_id(message_id)
-            return jsonify({"status": "send_error"}), 500
+                    if not datos or not mensaje:
+                        mensaje = "⚠️ No hay datos disponibles"
+                        if not enviar_mensaje_whatsapp(numero_remitente, mensaje):
+                            errores_envio += 1
+                        continue
 
-        # ========== PALABRA CLAVE: RESUMEN ==========
-        else:
-            es_jefe_supervisor = es_jefe(rol)
+                    if not enviar_mensaje_whatsapp(numero_remitente, mensaje):
+                        errores_envio += 1
+                        logger.error(f"❌ No se pudo enviar RESUMEN a {nombre_usuario}; message_id conservado para evitar duplicado")
+                    else:
+                        logger.info(f"✅ Reporte enviado a {nombre_usuario}")
 
-            if es_jefe_supervisor:
-                logger.info(f"👔 Jefe/Supervisor: {nombre_usuario}")
-                datos = obtener_datos_generales()
-                mensaje = generar_mensaje_jefe(datos)
-            else:
-                logger.info(f"👤 Vendedor: {nombre_usuario}")
-                datos = obtener_datos_vendedor(nombre_usuario)
-                mensaje = generar_mensaje_vendedor(datos)
-
-            if not datos or not mensaje:
-                mensaje = "⚠️ No hay datos disponibles"
-                exito = enviar_mensaje_whatsapp(numero_remitente, mensaje)
-                if not exito:
-                    liberar_message_id(message_id)
-                return jsonify({"status": "no_data"}), 200
-
-            exito = enviar_mensaje_whatsapp(numero_remitente, mensaje)
-
-            if exito:
-                logger.info(f"✅ Reporte enviado a {nombre_usuario}")
-                return jsonify({"status": "success"}), 200
-
-            liberar_message_id(message_id)
-            return jsonify({"status": "send_error"}), 500
+        return jsonify({
+            "status": "ok",
+            "procesados": procesados,
+            "duplicados": duplicados,
+            "errores_envio": errores_envio
+        }), 200
 
     except Exception as e:
         logger.exception(f"❌ Error procesando webhook: {e}")
@@ -1015,7 +1059,7 @@ def status():
         "status": "active",
         "timestamp": ctx["ahora"].isoformat(),
         "webhook": "/webhook",
-        "version": "V3 TROYA Correcto",
+        "version": "V3 Consolidado - FIXED",
         "periodo": ctx["periodo"],
         "palabras_clave": ["RESUMEN", "TROYA"],
     }), 200
@@ -1026,7 +1070,7 @@ def status():
 
 if __name__ == "__main__":
     logger.info("=" * 70)
-    logger.info("🚀 WEBHOOK V3 CONSOLIDADO - QUERIES TROYA CORREGIDAS")
+    logger.info("🚀 WEBHOOK V3 CONSOLIDADO - RESUMEN + TROYA (FIXED)")
     logger.info("=" * 70)
     ctx = obtener_contexto_periodo()
     dias = calcular_dias_laborables_periodo()
@@ -1034,8 +1078,9 @@ if __name__ == "__main__":
     logger.info(f"Días laborables: {dias}")
     logger.info(f"BD: {BD_PATH}")
     logger.info(f"Excel: {EXCEL_VENDEDORES}")
+    logger.info(f"Feriados: {FERIADOS_XLSX} ({len(FERIADOS)} fechas)")
     logger.info("Palabras clave: RESUMEN | TROYA")
-    logger.info("QUERIES TROYA: CAST AS REAL | Cdg_Vend | ARCOR")
+    logger.info("🔧 FIX: TROYA vendedor y jefe/supervisor filtrado por Proveedor = ARCOR")
     logger.info("=" * 70)
 
     inicializar_bd()
