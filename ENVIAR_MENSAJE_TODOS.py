@@ -121,7 +121,7 @@ def enviar_mensaje_whatsapp(numero_destino, nombre_vendedor, reintentos=3):
             "type": "template",
             "template": {
                 "name": PLANTILLA_NOMBRE,
-                "language": {"code": "es"}
+                "language": {"code": "en"}
             }
         }
 
