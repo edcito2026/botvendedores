@@ -367,7 +367,7 @@ def obtener_clientes_troya_generales():
 
         # Obtener todos los clientes CALIF=D
         cursor.execute("""
-            SELECT Cod_Clie, Raz_Social, Giro, Vendedor
+            SELECT Cod_Clie, Raz_Social, Vendedor
             FROM clientes
             WHERE Calif = 'D'
             ORDER BY Vendedor, Raz_Social
@@ -379,7 +379,6 @@ def obtener_clientes_troya_generales():
         # Período actual
         ahora = ahora_local()
         periodo = f"{ahora.year}{ahora.month:02d}"
-        tabla_ventas = f"VENTAS{ahora.year}"
 
         # Verificar compras
         for cliente in clientes:
@@ -387,13 +386,13 @@ def obtener_clientes_troya_generales():
                 cursor.execute("""
                     SELECT COUNT(*) as total_compras
                     FROM VENTAS2026
-                    WHERE Cod_Clie = ? AND Periodo = ?
-                """, (cliente['Cod_Clie'], periodo))
+                    WHERE Cliente = ? AND Periodo = ?
+                """, (cliente['Raz_Social'], periodo))
                 resultado = cursor.fetchone()
                 total_compras = resultado['total_compras'] if resultado else 0
                 cliente['tiene_compras'] = total_compras > 0
             except Exception as e:
-                logger.error(f"❌ Error verificando compras para {cliente['Cod_Clie']}: {e}")
+                logger.error(f"❌ Error verificando compras para {cliente['Raz_Social']}: {e}")
                 cliente['tiene_compras'] = False
 
         conn.close()
