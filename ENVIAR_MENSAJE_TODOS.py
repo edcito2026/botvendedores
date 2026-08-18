@@ -118,8 +118,11 @@ def enviar_mensaje_whatsapp(numero_destino, nombre_vendedor, reintentos=3):
         payload = {
             "messaging_product": "whatsapp",
             "to": numero,
-            "type": "text",
-            "text": {"body": MENSAJE_DIRECTO}
+            "type": "template",
+            "template": {
+                "name": PLANTILLA_NOMBRE,
+                "language": {"code": "es"}
+            }
         }
 
         headers = {
