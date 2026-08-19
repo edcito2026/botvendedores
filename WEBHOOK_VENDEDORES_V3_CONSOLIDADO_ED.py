@@ -578,7 +578,10 @@ No hay clientes TROYA registrados.
     total_clientes = len(clientes)
     con_compra_total = sum(1 for c in clientes if c.get('tiene_compras'))
     sin_compra_total = total_clientes - con_compra_total
-    ticket_promedio_general = sum(c.get('venta_actual', 0) for c in clientes) / max(con_compra_total, 1)
+    ticket_promedio_general = (
+        sum(float(c.get('venta_actual') or 0) for c in clientes if float(c.get('venta_actual') or 0) > 0)
+        / max(con_compra_total, 1)
+    )
 
     mensaje = f"""👨‍💼 CLIENTES TROYA CONSOLIDADOS
 {mes_nombre} 2026 | {ahora_local().strftime('%d/%m/%Y %H:%M')}
@@ -641,9 +644,10 @@ def obtener_datos_vendedor(nombre_vendedor):
         }
 
         cursor.execute("""
-            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Documento), 0), 2), 0) AS ticket
+            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Cod_Clie), 0), 2), 0) AS ticket
             FROM VENTAS2026
             WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor = 'ARCOR'
+              AND CAST(Imp_Total AS REAL) > 0
         """, (f"%{nombre_vendedor}%", periodo))
         ticket = cursor.fetchone()
         datos["ticket_promedio"] = ticket["ticket"] or 0
@@ -686,9 +690,10 @@ def obtener_datos_vendedor(nombre_vendedor):
         datos["clientes_troya_no_compraron"] = max(0, total_d_clientes - datos["clientes_troya_compraron"])
 
         cursor.execute("""
-            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Documento), 0), 2), 0) AS ticket_troya
+            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Cod_Clie), 0), 2), 0) AS ticket_troya
             FROM VENTAS2026
             WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor = 'ARCOR' AND Calif = 'D'
+              AND CAST(Imp_Total AS REAL) > 0
         """, (f"%{nombre_vendedor}%", periodo))
         ticket_troya = cursor.fetchone()
         datos["ticket_troya"] = ticket_troya["ticket_troya"] or 0
@@ -793,9 +798,10 @@ def obtener_datos_generales():
         datos["cobertura"] = venta_data["clientes_totales"] or 0
 
         cursor.execute("""
-            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Documento), 0), 2), 0) AS ticket
+            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Cod_Clie), 0), 2), 0) AS ticket
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR' AND Periodo = ?
+              AND CAST(Imp_Total AS REAL) > 0
         """, (periodo,))
         ticket = cursor.fetchone()
         datos["ticket_promedio"] = ticket["ticket"] or 0
@@ -843,9 +849,10 @@ def obtener_datos_generales():
         datos["clientes_troya_no_compraron"] = max(0, total_d_clientes - datos["clientes_troya_compraron"])
 
         cursor.execute("""
-            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Documento), 0), 2), 0) AS ticket_troya
+            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)) / NULLIF(COUNT(DISTINCT Cod_Clie), 0), 2), 0) AS ticket_troya
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR' AND Periodo = ? AND Calif = 'D'
+              AND CAST(Imp_Total AS REAL) > 0
         """, (periodo,))
         ticket_troya = cursor.fetchone()
         datos["ticket_troya"] = ticket_troya["ticket_troya"] or 0
