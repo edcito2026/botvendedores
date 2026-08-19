@@ -11,6 +11,7 @@ import openpyxl
 import os
 import re
 from threading import Lock
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 # ============================================================
@@ -140,8 +141,11 @@ _EXCEL_CACHE = {}
 _EXCEL_LOCK = Lock()
 
 def get_db_connection():
-    conn = sqlite3.connect(BD_PATH, timeout=15)
+    conn = sqlite3.connect(BD_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 def inicializar_bd():
@@ -171,23 +175,31 @@ def inicializar_bd():
             if conn:
                 conn.close()
 
+# Un único punto de escritura para la deduplicación.
+_MESSAGE_CLAIM_LOCK = Lock()
+
+
 def reclamar_message_id(message_id, telefono):
     inicializar_bd()
+    if not message_id:
+        return True
     conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.execute("""
-            INSERT OR IGNORE INTO webhook_procesados (message_id, telefono, recibido_en)
-            VALUES (?, ?, ?)
-        """, (message_id, telefono, ahora_local().isoformat()))
-        conn.commit()
+        with _MESSAGE_CLAIM_LOCK:
+            conn = get_db_connection()
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO webhook_procesados (message_id, telefono, recibido_en) VALUES (?, ?, ?)""",
+                (message_id, telefono, ahora_local().isoformat())
+            )
+            conn.commit()
         return cursor.rowcount == 1
     except Exception as e:
-        logger.error(f"❌ Error registrando message_id: {e}")
-        return True
+        logger.error(f"❌ No se pudo reclamar message_id {message_id}: {e}")
+        return None
     finally:
         if conn:
             conn.close()
+
 
 def liberar_message_id(message_id):
     if not message_id:
@@ -202,6 +214,7 @@ def liberar_message_id(message_id):
     finally:
         if conn:
             conn.close()
+
 
 # ============================================================
 # 5. VENDEDORES
@@ -279,7 +292,7 @@ def obtener_clientes_troya(nombre_vendedor):
     try:
         logger.info(f"🔍 Buscando TROYA para: '{nombre_vendedor}'")
 
-        conn = sqlite3.connect(BD_PATH, timeout=15)
+        conn = sqlite3.connect(BD_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -329,11 +342,16 @@ def obtener_clientes_troya(nombre_vendedor):
 
 
 def obtener_clientes_troya_generales():
-    """Obtiene clientes TROYA de TODOS los vendedores - QUERY CORRECTA"""
+    """Obtiene clientes TROYA de TODOS los vendedores sin duplicar importes.
+
+    Las ventas se agregan primero por cliente + vendedor + periodo y
+    recién después se unen con clientes. Esto evita la multiplicación
+    de filas que ocurría al hacer JOIN simultáneo de agosto y julio.
+    """
     try:
         logger.info("🔍 Buscando TROYA GENERAL para todos los vendedores")
 
-        conn = sqlite3.connect(BD_PATH, timeout=15)
+        conn = sqlite3.connect(BD_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
@@ -343,35 +361,62 @@ def obtener_clientes_troya_generales():
         anio_anterior = ahora.year if ahora.month > 1 else ahora.year - 1
         periodo_anterior = f"{anio_anterior}{mes_anterior:02d}"
 
-        # Query CORRECTA: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
+        # IMPORTANTE:
+        # 1) Primero consolidamos VENTAS2026 por cliente + vendedor + periodo.
+        # 2) Luego hacemos UN solo JOIN contra ese resultado.
+        # Así evitamos multiplicar ventas de agosto x ventas de julio.
         query = """
+        WITH ventas_agregadas AS (
+            SELECT
+                CAST(Cod_Clie AS REAL) AS Cod_Clie_real,
+                CAST(Cdg_Vend AS REAL) AS Cdg_Vend_real,
+                Periodo,
+                ROUND(SUM(CAST(Imp_Total AS REAL)), 2) AS venta
+            FROM VENTAS2026
+            WHERE Proveedor = 'ARCOR'
+              AND Periodo IN (?, ?)
+            GROUP BY
+                CAST(Cod_Clie AS REAL),
+                CAST(Cdg_Vend AS REAL),
+                Periodo
+        )
         SELECT
-          c.Cod_Clie,
-          c.Raz_Social,
-          c.Vendedor,
-          c.DV,
-          COALESCE(ROUND(SUM(CASE WHEN v_actual.Periodo = ? THEN v_actual.Imp_Total ELSE 0 END), 2), 0) as venta_actual,
-          COALESCE(ROUND(SUM(CASE WHEN v_anterior.Periodo = ? THEN v_anterior.Imp_Total ELSE 0 END), 2), 0) as venta_anterior
+            c.Cod_Clie,
+            c.Raz_Social,
+            c.Vendedor,
+            c.DV,
+            COALESCE(MAX(CASE
+                WHEN va.Periodo = ? THEN va.venta
+                ELSE 0
+            END), 0) AS venta_actual,
+            COALESCE(MAX(CASE
+                WHEN va.Periodo = ? THEN va.venta
+                ELSE 0
+            END), 0) AS venta_anterior
         FROM clientes c
-        LEFT JOIN VENTAS2026 v_actual ON CAST(c.Cod_Clie AS REAL) = CAST(v_actual.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_actual.Cdg_Vend AS REAL)
-          AND v_actual.Periodo = ?
-          AND v_actual.Proveedor = 'ARCOR'
-        LEFT JOIN VENTAS2026 v_anterior ON CAST(c.Cod_Clie AS REAL) = CAST(v_anterior.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_anterior.Cdg_Vend AS REAL)
-          AND v_anterior.Periodo = ?
-          AND v_anterior.Proveedor = 'ARCOR'
+        LEFT JOIN ventas_agregadas va
+          ON CAST(c.Cod_Clie AS REAL) = va.Cod_Clie_real
+         AND CAST(c.Cdg_Vend AS REAL) = va.Cdg_Vend_real
         WHERE c.Calif = 'D'
-        GROUP BY c.Cod_Clie, c.Raz_Social, c.Vendedor, c.DV
-        ORDER BY c.Vendedor, venta_actual DESC, c.Raz_Social
+        GROUP BY
+            c.Cod_Clie,
+            c.Raz_Social,
+            c.Vendedor,
+            c.DV
+        ORDER BY
+            c.Vendedor,
+            venta_actual DESC,
+            c.Raz_Social
         """
 
-        cursor.execute(query, (periodo_actual, periodo_anterior, periodo_actual, periodo_anterior))
+        cursor.execute(
+            query,
+            (periodo_actual, periodo_anterior, periodo_actual, periodo_anterior)
+        )
         clientes = [dict(row) for row in cursor.fetchall()]
 
-        # Agregar flag tiene_compras
         for cliente in clientes:
-            cliente['tiene_compras'] = cliente['venta_actual'] > 0
+            cliente["tiene_compras"] = cliente["venta_actual"] > 0
 
         logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL")
         conn.close()
@@ -864,68 +909,58 @@ def verificar_webhook():
 
 @app.route("/webhook", methods=["POST"])
 def recibir_mensaje():
-    """Recibe mensajes y responde según palabra clave"""
+    """Recibe, deduplica y encola el mensaje; responde 200 inmediatamente."""
     try:
         data = request.get_json(silent=True) or {}
-
         if "entry" not in data or not data["entry"]:
             return jsonify({"status": "ok"}), 200
-
         entrada = data["entry"][0]
         cambios = entrada.get("changes") or []
         if not cambios:
             return jsonify({"status": "ok"}), 200
-
         cambio = cambios[0].get("value") or {}
         mensajes = cambio.get("messages") or []
         if not mensajes:
             return jsonify({"status": "ok"}), 200
-
         mensaje_obj = mensajes[0]
         message_id = mensaje_obj.get("id")
         numero_remitente = mensaje_obj.get("from", "")
-        tipo = mensaje_obj.get("type")
-
-        if tipo != "text":
+        if mensaje_obj.get("type") != "text":
             return jsonify({"status": "ok"}), 200
-
         texto_mensaje = (mensaje_obj.get("text", {}).get("body", "").strip()).upper()
         logger.info(f"📨 Mensaje de *{numero_remitente[-4:]}: {texto_mensaje[:50]}")
-
-        # Detectar palabra clave: RESUMEN o TROYA
-        palabra_detectada = None
-        if "RESUMEN" in texto_mensaje:
-            palabra_detectada = "RESUMEN"
-        elif "TROYA" in texto_mensaje:
-            palabra_detectada = "TROYA"
-
+        palabra_detectada = "RESUMEN" if "RESUMEN" in texto_mensaje else ("TROYA" if "TROYA" in texto_mensaje else None)
         if not palabra_detectada:
             logger.info("⊘ Sin palabra clave")
             return jsonify({"status": "ok"}), 200
-
-        # Evitar duplicados
-        if message_id and not reclamar_message_id(message_id, numero_remitente):
-            logger.info(f"♻️ Webhook duplicado")
+        reclamado = reclamar_message_id(message_id, numero_remitente)
+        if reclamado is False:
+            logger.info(f"♻️ Webhook duplicado ignorado: {message_id}")
             return jsonify({"status": "duplicate"}), 200
+        if reclamado is None:
+            logger.error(f"⛔ No se procesa {message_id}: no pudo registrarse en SQLite")
+            return jsonify({"status": "db_busy"}), 200
+        WEBHOOK_EXECUTOR.submit(procesar_mensaje_en_segundo_plano, {"message_id": message_id, "numero_remitente": numero_remitente, "palabra_detectada": palabra_detectada})
+        return jsonify({"status": "accepted", "message_id": message_id, "queued": True}), 200
+    except Exception as e:
+        logger.exception(f"❌ Error recibiendo webhook: {e}")
+        return jsonify({"status": "error"}), 200
 
-        logger.info(f"✅ Palabra clave: {palabra_detectada}")
 
-        # Validar vendedor
+def procesar_mensaje_en_segundo_plano(job):
+    message_id = job.get("message_id")
+    numero_remitente = job.get("numero_remitente", "")
+    palabra_detectada = job.get("palabra_detectada")
+    try:
+        logger.info(f"⚙️ Procesando en segundo plano message_id={message_id} palabra={palabra_detectada}")
         es_valido, datos_usuario = validar_vendedor(numero_remitente)
-
         if not es_valido:
             enviar_mensaje_whatsapp(numero_remitente, "❌ No autorizado. Contacta a tu supervisor.")
-            return jsonify({"status": "unauthorized"}), 200
-
+            return
         nombre_usuario = datos_usuario["nombre"]
-        codigo_usuario = datos_usuario.get("codigo", nombre_usuario)
         rol = datos_usuario.get("rol", "")
-
-        # ========== PALABRA CLAVE: TROYA ==========
         if palabra_detectada == "TROYA":
-            es_jefe_supervisor = es_jefe(rol)
-
-            if es_jefe_supervisor:
+            if es_jefe(rol):
                 logger.info(f"👔 Jefe/Supervisor solicita TROYA: {nombre_usuario}")
                 clientes_troya = obtener_clientes_troya_generales()
                 mensaje = generar_mensaje_troya_jefe(clientes_troya)
@@ -933,51 +968,32 @@ def recibir_mensaje():
                 logger.info(f"👤 Vendedor solicita TROYA: {nombre_usuario}")
                 clientes_troya = obtener_clientes_troya(nombre_usuario)
                 mensaje = generar_mensaje_troya(datos_usuario, clientes_troya)
-
             if not mensaje:
                 mensaje = "⚠️ Error generando reporte TROYA"
-
-            exito = enviar_mensaje_whatsapp(numero_remitente, mensaje)
-
-            if exito:
-                logger.info(f"✅ Reporte TROYA enviado a {nombre_usuario}")
-                return jsonify({"status": "success"}), 200
-
-            liberar_message_id(message_id)
-            return jsonify({"status": "send_error"}), 500
-
-        # ========== PALABRA CLAVE: RESUMEN ==========
-        else:
-            es_jefe_supervisor = es_jefe(rol)
-
-            if es_jefe_supervisor:
-                logger.info(f"👔 Jefe/Supervisor: {nombre_usuario}")
-                datos = obtener_datos_generales()
-                mensaje = generar_mensaje_jefe(datos)
+            if enviar_mensaje_whatsapp(numero_remitente, mensaje):
+                logger.info(f"✅ Reporte TROYA enviado a {nombre_usuario} (message_id={message_id})")
             else:
-                logger.info(f"👤 Vendedor: {nombre_usuario}")
-                datos = obtener_datos_vendedor(nombre_usuario)
-                mensaje = generar_mensaje_vendedor(datos)
-
-            if not datos or not mensaje:
-                mensaje = "⚠️ No hay datos disponibles"
-                exito = enviar_mensaje_whatsapp(numero_remitente, mensaje)
-                if not exito:
-                    liberar_message_id(message_id)
-                return jsonify({"status": "no_data"}), 200
-
-            exito = enviar_mensaje_whatsapp(numero_remitente, mensaje)
-
-            if exito:
-                logger.info(f"✅ Reporte enviado a {nombre_usuario}")
-                return jsonify({"status": "success"}), 200
-
-            liberar_message_id(message_id)
-            return jsonify({"status": "send_error"}), 500
-
+                logger.error(f"❌ Error enviando TROYA a {nombre_usuario}; message_id conservado: {message_id}")
+            return
+        if es_jefe(rol):
+            logger.info(f"👔 Jefe/Supervisor: {nombre_usuario}")
+            datos = obtener_datos_generales()
+            mensaje = generar_mensaje_jefe(datos)
+        else:
+            logger.info(f"👤 Vendedor: {nombre_usuario}")
+            datos = obtener_datos_vendedor(nombre_usuario)
+            mensaje = generar_mensaje_vendedor(datos)
+        if not datos or not mensaje:
+            mensaje = "⚠️ No hay datos disponibles"
+        if enviar_mensaje_whatsapp(numero_remitente, mensaje):
+            logger.info(f"✅ Reporte enviado a {nombre_usuario} (message_id={message_id})")
+        else:
+            logger.error(f"❌ Error enviando RESUMEN a {nombre_usuario}; message_id conservado: {message_id}")
     except Exception as e:
-        logger.exception(f"❌ Error procesando webhook: {e}")
-        return jsonify({"status": "error"}), 500
+        logger.exception(f"❌ Error procesando message_id={message_id}: {e}")
+
+
+WEBHOOK_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="whatsapp-worker")
 
 @app.route("/status", methods=["GET"])
 def status():
@@ -987,7 +1003,7 @@ def status():
         "status": "active",
         "timestamp": ctx["ahora"].isoformat(),
         "webhook": "/webhook",
-        "version": "V3 TROYA Correcto",
+        "version": "V4 ANTI-DUPLICADOS - WORKER",
         "periodo": ctx["periodo"],
         "palabras_clave": ["RESUMEN", "TROYA"],
     }), 200
@@ -998,7 +1014,7 @@ def status():
 
 if __name__ == "__main__":
     logger.info("=" * 70)
-    logger.info("🚀 WEBHOOK V3 CONSOLIDADO - QUERIES TROYA CORREGIDAS")
+    logger.info("🚀 WEBHOOK V4 - ANTI-DUPLICADOS + WORKER")
     logger.info("=" * 70)
     ctx = obtener_contexto_periodo()
     dias = calcular_dias_laborables_periodo()
@@ -1007,7 +1023,7 @@ if __name__ == "__main__":
     logger.info(f"BD: {BD_PATH}")
     logger.info(f"Excel: {EXCEL_VENDEDORES}")
     logger.info("Palabras clave: RESUMEN | TROYA")
-    logger.info("QUERIES TROYA: CAST AS REAL | Cdg_Vend | ARCOR")
+    logger.info("QUERIES TROYA: CAST AS REAL | Cdg_Vend | ARCOR | WORKER ÚNICO")
     logger.info("=" * 70)
 
     inicializar_bd()
