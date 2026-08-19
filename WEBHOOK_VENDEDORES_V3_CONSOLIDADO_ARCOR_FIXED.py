@@ -485,48 +485,24 @@ No hay clientes TROYA (Calif=D) registrados.
 
     ahora = ahora_local()
     mes_nombre = MESES_ES[ahora.month - 1]
-    periodo = f"{ahora.year}{ahora.month:02d}"
 
     total_clientes = len(clientes)
     con_compra_total = sum(1 for c in clientes if c.get('tiene_compras'))
     sin_compra_total = total_clientes - con_compra_total
 
-    # Agrupar por vendedor y calcular ticket
+    # Agrupar por vendedor
     por_vendedor = {}
-    conn = None
-    try:
-        conn = sqlite3.connect(BD_PATH, timeout=15)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+    for cliente in clientes:
+        vendedor = cliente.get('Vendedor', 'SIN VENDEDOR')
+        if vendedor not in por_vendedor:
+            por_vendedor[vendedor] = {'total': 0, 'con_compra': 0, 'sin_compra': 0}
+        por_vendedor[vendedor]['total'] += 1
+        if cliente.get('tiene_compras'):
+            por_vendedor[vendedor]['con_compra'] += 1
+        else:
+            por_vendedor[vendedor]['sin_compra'] += 1
 
-        for cliente in clientes:
-            vendedor = cliente.get('Vendedor', 'SIN VENDEDOR')
-            if vendedor not in por_vendedor:
-                por_vendedor[vendedor] = {'total': 0, 'con_compra': 0, 'sin_compra': 0, 'venta_total': 0, 'docs': 0}
-
-            por_vendedor[vendedor]['total'] += 1
-            if cliente.get('tiene_compras'):
-                por_vendedor[vendedor]['con_compra'] += 1
-                por_vendedor[vendedor]['venta_total'] += cliente.get('venta_actual', 0)
-                # Contar documentos para este cliente TROYA
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT Documento) as docs
-                    FROM VENTAS2026
-                    WHERE Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR' AND Calif = 'D' AND Cliente = ?
-                """, (vendedor, periodo, cliente['Raz_Social']))
-                doc_result = cursor.fetchone()
-                por_vendedor[vendedor]['docs'] += doc_result['docs'] if doc_result else 0
-            else:
-                por_vendedor[vendedor]['sin_compra'] += 1
-    except Exception as e:
-        logger.error(f"❌ Error calculando ticket: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-    total_venta_troya = sum(d['venta_total'] for d in por_vendedor.values())
-    total_docs = sum(d['docs'] for d in por_vendedor.values())
-    ticket_promedio_general = round(total_venta_troya / total_docs, 2) if total_docs > 0 else 0
+    pct_con_compra = (con_compra_total / total_clientes * 100) if total_clientes > 0 else 0
 
     mensaje = f"""👨‍💼 CLIENTES TROYA CONSOLIDADOS
 {ahora_local().strftime('%d/%m/%Y %H:%M')}
@@ -535,15 +511,14 @@ No hay clientes TROYA (Calif=D) registrados.
 Total Clientes: {total_clientes}
 ✅ SI: {con_compra_total} clientes
 ❌ NO: {sin_compra_total} clientes
-🎫 Ticket: S/. {ticket_promedio_general:,.0f}
 
-VENDEDOR        │ ✅  │ ❌  │ TICKET
-────────────────┼─────┼─────┼─────────"""
+VENDEDOR        │ ✅  │ ❌
+────────────────┼─────┼─────"""
 
     for vendedor in sorted(por_vendedor.keys()):
         datos = por_vendedor[vendedor]
-        ticket = round(datos['venta_total'] / datos['docs'], 2) if datos['docs'] > 0 else 0
-        mensaje += f"\n{vendedor:<15}│ {datos['con_compra']:>3} │ {datos['sin_compra']:>3} │ S/. {ticket:.0f}"
+        nombre_corto = vendedor.split()[0] if vendedor else "SIN VENDEDOR"
+        mensaje += f"\n{nombre_corto:<15}│ {datos['con_compra']:>3} │ {datos['sin_compra']:>3}"
 
     mensaje += "\n\n🤖 Bot N&J"
 
