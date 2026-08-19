@@ -288,7 +288,18 @@ def es_jefe(rol=""):
 # ============================================================
 
 def obtener_clientes_troya(nombre_vendedor):
-    """Obtiene clientes TROYA (Calif='D') con JOIN CORRECTO: CAST AS REAL"""
+    """Obtiene clientes TROYA del vendedor sin duplicar importes.
+
+    Reglas del reporte vendedor:
+      - Cliente debe ser Calif='D' en la tabla clientes.
+      - Vendedor se determina por clientes.Vendedor.
+      - Ventas deben ser ARCOR.
+      - Se consideran únicamente período actual y período anterior.
+      - El cruce conserva Cod_Clie + Cdg_Vend para respetar la cartera
+        asignada al vendedor.
+      - Las ventas se agregan antes del JOIN para evitar multiplicaciones
+        entre movimientos del período actual y anterior.
+    """
     try:
         logger.info(f"🔍 Buscando TROYA para: '{nombre_vendedor}'")
 
@@ -302,37 +313,75 @@ def obtener_clientes_troya(nombre_vendedor):
         anio_anterior = ahora.year if ahora.month > 1 else ahora.year - 1
         periodo_anterior = f"{anio_anterior}{mes_anterior:02d}"
 
-        # Query CORRECTA: JOIN por Cod_Clie y Cdg_Vend (CAST AS REAL)
+        # Primero agregamos las ventas por cliente + vendedor + período.
+        # Esto evita el producto cruzado que inflaba los importes cuando
+        # existían varias ventas en ambos períodos.
         query = """
+        WITH ventas_agregadas AS (
+            SELECT
+                CAST(Cod_Clie AS REAL) AS Cod_Clie_real,
+                CAST(Cdg_Vend AS REAL) AS Cdg_Vend_real,
+                Periodo,
+                ROUND(SUM(CAST(Imp_Total AS REAL)), 2) AS venta
+            FROM VENTAS2026
+            WHERE Proveedor = 'ARCOR'
+              AND Periodo IN (?, ?)
+            GROUP BY
+                CAST(Cod_Clie AS REAL),
+                CAST(Cdg_Vend AS REAL),
+                Periodo
+        )
         SELECT
-          c.Cod_Clie,
-          c.Raz_Social,
-          c.Vendedor,
-          c.DV,
-          c.Giro,
-          COALESCE(ROUND(SUM(CASE WHEN v_actual.Periodo = ? THEN v_actual.Imp_Total ELSE 0 END), 2), 0) as venta_actual,
-          COALESCE(ROUND(SUM(CASE WHEN v_anterior.Periodo = ? THEN v_anterior.Imp_Total ELSE 0 END), 2), 0) as venta_anterior
+            c.Cod_Clie,
+            c.Raz_Social,
+            c.Vendedor,
+            c.DV,
+            c.Giro,
+            COALESCE(MAX(CASE
+                WHEN va.Periodo = ? THEN va.venta
+                ELSE 0
+            END), 0) AS venta_actual,
+            COALESCE(MAX(CASE
+                WHEN va.Periodo = ? THEN va.venta
+                ELSE 0
+            END), 0) AS venta_anterior
         FROM clientes c
-        LEFT JOIN VENTAS2026 v_actual ON CAST(c.Cod_Clie AS REAL) = CAST(v_actual.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_actual.Cdg_Vend AS REAL)
-          AND v_actual.Proveedor = 'ARCOR'
-        LEFT JOIN VENTAS2026 v_anterior ON CAST(c.Cod_Clie AS REAL) = CAST(v_anterior.Cod_Clie AS REAL)
-          AND CAST(c.Cdg_Vend AS REAL) = CAST(v_anterior.Cdg_Vend AS REAL)
-          AND v_anterior.Proveedor = 'ARCOR'
+        LEFT JOIN ventas_agregadas va
+          ON CAST(c.Cod_Clie AS REAL) = va.Cod_Clie_real
+         AND CAST(c.Cdg_Vend AS REAL) = va.Cdg_Vend_real
         WHERE c.Calif = 'D'
           AND c.Vendedor LIKE ?
-        GROUP BY c.Cod_Clie, c.Raz_Social, c.Vendedor, c.DV, c.Giro
-        ORDER BY venta_actual DESC, c.Raz_Social
+        GROUP BY
+            c.Cod_Clie,
+            c.Raz_Social,
+            c.Vendedor,
+            c.DV,
+            c.Giro
+        ORDER BY
+            venta_actual DESC,
+            c.Raz_Social
         """
 
-        cursor.execute(query, (periodo_actual, periodo_anterior, f"%{nombre_vendedor}%"))
+        cursor.execute(
+            query,
+            (periodo_actual, periodo_anterior, periodo_actual,
+             periodo_anterior, f"%{nombre_vendedor}%")
+        )
         clientes = [dict(row) for row in cursor.fetchall()]
 
-        # Agregar flag tiene_compras
         for cliente in clientes:
-            cliente['tiene_compras'] = cliente['venta_actual'] > 0
+            cliente["tiene_compras"] = float(cliente.get("venta_actual") or 0) > 0
 
-        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
+        total_actual = sum(float(c.get("venta_actual") or 0) for c in clientes)
+        total_anterior = sum(float(c.get("venta_anterior") or 0) for c in clientes)
+
+        logger.info(
+            f"📊 TROYA vendedor {nombre_vendedor}: "
+            f"actual S/. {total_actual:,.2f} | "
+            f"anterior S/. {total_anterior:,.2f} | "
+            f"clientes {len(clientes)}"
+        )
+
         conn.close()
         return clientes
 
