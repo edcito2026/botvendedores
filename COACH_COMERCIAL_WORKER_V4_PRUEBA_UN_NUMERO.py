@@ -107,13 +107,118 @@ def objetivo(saldo,fs,p):
     vals=[max(p.get(x.weekday(),0),1e-9) for x in fs]; return saldo*vals[0]/sum(vals)
 
 def troya(cur,n,p,didx):
-    # Dia_Sem no existe en clientes; se infiere el día habitual desde VENTAS2026.
-    nd=DIAS[didx]; q="""
-    WITH h AS (SELECT CAST(Cod_Clie AS REAL) id,Dia_Sem,COUNT(*) f,SUM(CAST(Imp_Total AS REAL)) v FROM VENTAS2026 WHERE Vendedor=? AND Proveedor='ARCOR' AND CAST(Imp_Total AS REAL)>0 GROUP BY CAST(Cod_Clie AS REAL),Dia_Sem),
-    dh AS (SELECT id,Dia_Sem FROM (SELECT h.*,ROW_NUMBER() OVER(PARTITION BY id ORDER BY f DESC,v DESC) rn FROM h) WHERE rn=1),
-    cp AS (SELECT DISTINCT CAST(Cod_Clie AS REAL) id FROM VENTAS2026 WHERE Vendedor=? AND Proveedor='ARCOR' AND Periodo=? AND CAST(Imp_Total AS REAL)>0)
-    SELECT c.Raz_Social,MAX(h.v) potencial FROM clientes c JOIN dh ON CAST(c.Cod_Clie AS REAL)=dh.id LEFT JOIN h ON h.id=dh.id AND h.Dia_Sem=dh.Dia_Sem LEFT JOIN cp ON cp.id=CAST(c.Cod_Clie AS REAL) WHERE c.Calif='D' AND c.Vendedor=? AND dh.Dia_Sem LIKE ? AND cp.id IS NULL GROUP BY c.Cod_Clie,c.Raz_Social ORDER BY potencial DESC LIMIT 5"""
-    return [dict(r) for r in cur.execute(q,(n,n,p,n,f'%{nd[:3]}%')).fetchall()]
+    """
+    TROYA del día:
+    - TROYA = clientes con Calif='D' en la cartera del vendedor.
+    - Día de visita = clientes.DV (1=Lun ... 6=Sáb).
+    - Solo ARCOR.
+    - Solo clientes que NO han comprado en el período actual.
+    - Prioriza hasta 10 clientes que compraron el mes anterior y aún no
+      compraron este mes; luego completa con otros TROYA sin compra actual.
+    - Si no existen TROYA para el día, devuelve [] y el mensaje se omite.
+    """
+    if didx > 5:  # domingo / no laborable
+        return []
+
+    dv=didx+1
+    q="""
+    WITH actual AS (
+        SELECT CAST(Cod_Clie AS REAL) id,
+               SUM(CAST(Imp_Total AS REAL)) venta_actual
+        FROM VENTAS2026
+        WHERE Proveedor='ARCOR'
+          AND Periodo=?
+          AND CAST(Imp_Total AS REAL)>0
+        GROUP BY CAST(Cod_Clie AS REAL)
+    ),
+    anterior AS (
+        SELECT CAST(Cod_Clie AS REAL) id,
+               SUM(CAST(Imp_Total AS REAL)) venta_anterior
+        FROM VENTAS2026
+        WHERE Vendedor=?
+          AND Proveedor='ARCOR'
+          AND Periodo=?
+          AND CAST(Imp_Total AS REAL)>0
+        GROUP BY CAST(Cod_Clie AS REAL)
+    ),
+    potencial AS (
+        SELECT CAST(Cod_Clie AS REAL) id,
+               SUM(CAST(Imp_Total AS REAL)) potencial
+        FROM VENTAS2026
+        WHERE Vendedor=?
+          AND Proveedor='ARCOR'
+          AND CAST(Imp_Total AS REAL)>0
+        GROUP BY CAST(Cod_Clie AS REAL)
+    )
+    SELECT
+        c.Cod_Clie,
+        c.Raz_Social,
+        c.DV,
+        COALESCE(a.venta_actual,0) venta_actual,
+        COALESCE(an.venta_anterior,0) venta_anterior,
+        COALESCE(po.potencial,0) potencial
+    FROM clientes c
+    LEFT JOIN actual a ON a.id=CAST(c.Cod_Clie AS REAL)
+    LEFT JOIN anterior an ON an.id=CAST(c.Cod_Clie AS REAL)
+    LEFT JOIN potencial po ON po.id=CAST(c.Cod_Clie AS REAL)
+    WHERE c.Calif='D'
+      AND c.Vendedor=?
+      AND CAST(c.DV AS INTEGER)=?
+      AND COALESCE(a.venta_actual,0)<=0
+    ORDER BY
+      CASE WHEN COALESCE(an.venta_anterior,0)>0 THEN 0 ELSE 1 END,
+      COALESCE(an.venta_anterior,0) DESC,
+      COALESCE(po.potencial,0) DESC,
+      c.Raz_Social
+    LIMIT 10
+    """
+    rows=cur.execute(q,(p,n,(str(int(p[:4])-1)+"12" if p[4:6]=="01" else p[:4]+f"{int(p[4:6])-1:02d}"),n,n,dv)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def clientes_recuperacion(cur,n,p,didx):
+    """
+    Clientes de la cartera con DV del día que:
+    - compraron ARCOR el mes anterior,
+    - todavía no compraron ARCOR en el mes actual,
+    - no necesariamente son TROYA.
+    Máximo 10, priorizados por venta del mes anterior.
+    """
+    if didx > 5:
+        return []
+    dv=didx+1
+    prev=(str(int(p[:4])-1)+"12" if p[4:6]=="01" else p[:4]+f"{int(p[4:6])-1:02d}")
+    q="""
+    WITH actual AS (
+        SELECT CAST(Cod_Clie AS REAL) id,
+               SUM(CAST(Imp_Total AS REAL)) venta_actual
+        FROM VENTAS2026
+        WHERE Vendedor=? AND Proveedor='ARCOR' AND Periodo=?
+              AND CAST(Imp_Total AS REAL)>0
+        GROUP BY CAST(Cod_Clie AS REAL)
+    ),
+    anterior AS (
+        SELECT CAST(Cod_Clie AS REAL) id,
+               SUM(CAST(Imp_Total AS REAL)) venta_anterior
+        FROM VENTAS2026
+        WHERE Vendedor=? AND Proveedor='ARCOR' AND Periodo=?
+              AND CAST(Imp_Total AS REAL)>0
+        GROUP BY CAST(Cod_Clie AS REAL)
+    )
+    SELECT c.Cod_Clie,c.Raz_Social,c.DV,
+           COALESCE(an.venta_anterior,0) venta_anterior
+    FROM clientes c
+    JOIN anterior an ON an.id=CAST(c.Cod_Clie AS REAL)
+    LEFT JOIN actual ac ON ac.id=CAST(c.Cod_Clie AS REAL)
+    WHERE c.Vendedor=?
+      AND CAST(c.DV AS INTEGER)=?
+      AND COALESCE(ac.venta_actual,0)<=0
+    ORDER BY an.venta_anterior DESC,c.Raz_Social
+    LIMIT 10
+    """
+    return [dict(r) for r in cur.execute(q,(n,p,n,prev,n,dv)).fetchall()]
+
+
 def promociones_3_menor_venta(cur, n, p, pa):
     """3 promociones con menor venta del vendedor en el período actual."""
     q = """
@@ -201,6 +306,7 @@ def analizar(cur,n,c):
         'clientes_necesarios':max(cn,cobh),
         'peso_hoy':p.get(c['hoy'].weekday(),0),
         'troya':troya(cur,n,c['periodo'],c['hoy'].weekday()) if laborable(c['hoy']) else [],
+        'recuperacion':clientes_recuperacion(cur,n,c['periodo'],c['hoy'].weekday()) if laborable(c['hoy']) else [],
         'promos':promociones_3_menor_venta(cur,n,c['periodo'],periodo_ant(c)),
         'productos':productos_5_oportunidad(cur,n,c['periodo'])
     }
@@ -288,10 +394,17 @@ usando tu ticket actual de S/. {a['ticket']:,.2f}."""
         s+=f"""
 
 🎯 TROYA — {d}
-Clientes TROYA de tu día de visita que aún NO compraron:
+Clientes de tu cartera TROYA que debes priorizar hoy:
 """
-        for r in a['troya']:
-            s+=f"• {r['Raz_Social'][:34]}\n"
+        for i,r in enumerate(a['troya'],1):
+            marca="🔥" if r['venta_anterior']>0 else "•"
+            extra=" — compró mes anterior" if r['venta_anterior']>0 else ""
+            s+=f"{marca} {i}. {r['Raz_Social'][:40]}{extra}\n"
+        s+="👉 Son clientes que aún no compraron este mes. Prioriza primero los que compraron el mes anterior."
+    if a['recuperacion']:
+        s+="\n\n🔄 CLIENTES A RECUPERAR — "+d+"\nCompraron el mes anterior y aún no compraron este mes:\n"
+        for i,r in enumerate(a['recuperacion'],1):
+            s+=f"{i}️⃣ {r['Raz_Social'][:45]}\n"
         s+="👉 Prioridad: recuperar estas compras hoy."
 
     if a['promos']:
@@ -315,7 +428,7 @@ Actual: S/. {a['ticket']:,.2f}
 
 🔥 PRIORIDAD DE HOY
 1️⃣ Alcanzar S/. {a['objetivo']:,.2f}
-2️⃣ Recuperar TROYA del {d.lower()}
+2️⃣ Recuperar clientes TROYA / clientes con compra perdida
 3️⃣ Impulsar promociones y productos con menor venta
 4️⃣ Aumentar ticket por cliente
 
@@ -331,53 +444,36 @@ def enviar(t,m):
         logger.error('❌ WhatsApp %s %s',r.status_code,r.text[:300]); return False
     except Exception as e: logger.exception('❌ Envío Coach: %s',e); return False
 
-def ejecutar_prueba_un_numero(numero_prueba):
-    """
-    PRUEBA CONTROLADA:
-    - Solo analiza el vendedor asociado al número indicado.
-    - Solo puede enviar al número indicado.
-    - No recorre ni envía a los demás vendedores.
-    """
+def ejecutar():
     c=contexto()
-    if not laborable(c['hoy']):
-        logger.info('⏭️ Día no laborable: %s',c['hoy'])
-        return False
-
-    numero_prueba=tel(numero_prueba)
-    vs=vendedores()
-    usuario=vs.get(numero_prueba)
-
-    if not usuario:
-        logger.error('❌ El número %s no existe en vendedores.xlsx', numero_prueba)
-        return False
-
-    if any(x in usuario['rol'] for x in ('JEFE','SUPERVISOR','GERENTE','COORDINADOR')):
-        logger.error('❌ El número de prueba corresponde a un rol no vendedor: %s', usuario['rol'])
-        return False
-
-    conn=db()
+    if not laborable(c['hoy']): logger.info('⏭️ Día no laborable: %s',c['hoy']); return
+    init_control(); vs=vendedores(); conn=db()
     try:
-        a=analizar(conn.cursor(),usuario['nombre'],c)
-        estado,brecha_pp=estado_comercial(a,c)
-        logger.info(
-            '🧪 PRUEBA | vendedor=%s | estado=%s | brecha=%+.1f pp',
-            usuario['nombre'],estado,brecha_pp
-        )
+        for t,u in vs.items():
+            if any(x in u['rol'] for x in ('JEFE','SUPERVISOR','GERENTE','COORDINADOR')): continue
+            if not reclamar(c['hoy'].isoformat(),t,u['nombre']): continue
+            try:
+                a=analizar(conn.cursor(),u['nombre'],c)
+                estado, brecha_pp = estado_comercial(a,c)
+                logger.info('🧠 %s | estado=%s | brecha=%+.1f pp',u['nombre'],estado,brecha_pp)
+                if a['cuota']<=0: logger.warning('⚠️ Sin cuota ARCOR: %s',u['nombre']); continue
+                enviar(t,msg(a,c))
+            except Exception: logger.exception('❌ Coach %s',u['nombre'])
+    finally: conn.close()
 
-        if a['cuota']<=0:
-            logger.error('❌ Sin cuota ARCOR para %s',usuario['nombre'])
-            return False
-
-        mensaje=msg(a,c)
-        logger.info('📤 PRUEBA: enviando SOLO a *%s',numero_prueba[-4:])
-        return enviar(numero_prueba,mensaje)
-    finally:
-        conn.close()
-
+def segundos():
+    a=now(); x=a.replace(hour=HORA,minute=MINUTO,second=0,microsecond=0)
+    if a>=x:x+=timedelta(days=1)
+    return max((x-a).total_seconds(),1)
 
 if __name__=='__main__':
-    logger.info('🧪 COACH COMERCIAL - PRUEBA UN SOLO NUMERO')
-    logger.info('🎯 Destinatario autorizado: *%s', '981348717')
-    ok=ejecutar_prueba_un_numero('981348717')
-    logger.info('🧪 RESULTADO PRUEBA: %s', 'OK' if ok else 'ERROR')
-
+    logger.info('🧠 COACH COMERCIAL WORKER V1 | %02d:%02d America/Lima',HORA,MINUTO)
+    logger.info('BD=%s | VENDEDORES=%s | FERIADOS=%s',BD,VENDEDORES_XLSX,FERIADOS_XLSX)
+    init_control(); ultima=None
+    while True:
+        a=now(); h=a.date()
+        if a.hour==HORA and a.minute==MINUTO and ultima!=h:
+            try: ejecutar()
+            except Exception: logger.exception('❌ Error general Coach')
+            ultima=h
+        time.sleep(20)
