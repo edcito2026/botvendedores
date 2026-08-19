@@ -592,7 +592,7 @@ def obtener_datos_vendedor(nombre_vendedor):
             SELECT COUNT(DISTINCT Cod_Clie) AS total_clientes_d
             FROM clientes
             WHERE Vendedor = ? AND Calif = 'D'
-        """, (nombre_vendedor,))
+        """, (f"%{nombre_vendedor}%",))
         total_d = cursor.fetchone()
         total_d_clientes = total_d["total_clientes_d"] or 0
         datos["clientes_troya_no_compraron"] = max(0, total_d_clientes - datos["clientes_troya_compraron"])
