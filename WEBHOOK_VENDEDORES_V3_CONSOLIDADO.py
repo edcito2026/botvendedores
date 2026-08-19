@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-WEBHOOK RECEPCIÓN DE MENSAJES WHATSAPP - V3 CONSOLIDADO
-
-✨ NUEVAS CARACTERÍSTICAS:
-- Palabras clave: "RESUMEN" = reporte general, "TROYA" = reporte clientes TROYA
-- Reportes personalizados según rol: VENDEDOR vs JEFE/SUPERVISOR
-- Reporte TROYA: lista clientes Calif=D con split CON/SIN COMPRA
-- Gestión de créditos optimizada: UN SOLO servicio Render
-
-Variables de entorno:
-WHATSAPP_ACCESS_TOKEN
-WHATSAPP_PHONE_NUMBER_ID
-WHATSAPP_VERIFY_TOKEN
-WHATSAPP_API_VERSION (default v25.0)
-BD_PATH (default ventas.db)
-EXCEL_VENDEDORES (default vendedores.xlsx)
-DIAS_LABORABLES (default 0,1,2,3,4,5)
-"""
 
 from flask import Flask, request, jsonify
 import sqlite3
@@ -305,9 +287,9 @@ def obtener_clientes_troya(nombre_vendedor):
         cursor.execute("""
             SELECT Cod_Clie, Raz_Social, Dia_Sem
             FROM clientes
-            WHERE Calif = 'D' AND Vendedor = ?
+            WHERE Calif = 'D' AND Vendedor LIKE ?
             ORDER BY Raz_Social
-        """, (nombre_vendedor,))
+        """, (f"%{nombre_vendedor}%",))
 
         clientes = [dict(row) for row in cursor.fetchall()]
         logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
@@ -326,7 +308,7 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR'
                 """, (cliente['Raz_Social'], nombre_vendedor, periodo_actual))
                 resultado_actual = cursor.fetchone()
                 venta_actual = resultado_actual['total'] if resultado_actual and resultado_actual['total'] else 0
@@ -335,7 +317,7 @@ def obtener_clientes_troya(nombre_vendedor):
                 cursor.execute("""
                     SELECT ROUND(SUM(CAST(Imp_Total AS REAL)), 2) as total
                     FROM VENTAS2026
-                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR'
                 """, (cliente['Raz_Social'], nombre_vendedor, periodo_anterior))
                 resultado_anterior = cursor.fetchone()
                 venta_anterior = resultado_anterior['total'] if resultado_anterior and resultado_anterior['total'] else 0
@@ -386,7 +368,7 @@ def obtener_clientes_troya_generales():
                 cursor.execute("""
                     SELECT COUNT(*) as total_compras
                     FROM VENTAS2026
-                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ?
+                    WHERE Cliente = ? AND Vendedor = ? AND Periodo = ? AND Proveedor = 'ARCOR'
                 """, (cliente['Raz_Social'], cliente['Vendedor'], periodo))
                 resultado = cursor.fetchone()
                 total_compras = resultado['total_compras'] if resultado else 0
@@ -478,7 +460,7 @@ def generar_mensaje_troya_jefe(clientes):
     if not clientes:
         return """👨‍💼 REPORTE TROYA CONSOLIDADO
 
-No hay clientes TROYA (Calif=D) registrados.
+No hay clientes TROYA registrados.
 
 🤖 Bot N&J"""
 
@@ -523,9 +505,9 @@ No hay clientes TROYA (Calif=D) registrados.
     mensaje += """
 
 ⚡ ACCIONES REQUERIDAS:
-• Todos deben reactivar clientes SIN COMPRA
-• Mantener activos los clientes CON COMPRA
-• Enviar promociones especiales
+• Enfocate en clientes SIN COMPRA
+• Reposicion a los clientes CON COMPRA
+• Sugerir promociones especiales
 
 🤖 Bot N&J"""
 
@@ -660,32 +642,32 @@ def generar_mensaje_vendedor(datos):
 👤 {datos['vendedor'].upper()}
 
 🎯 OBJETIVOS MES:
-├─ Cuota Ventas: S/. {datos['cuota']:,.2f}
-└─ Cuota Cobertura: {datos['cuota_cobertura']} clientes
+├─ Ventas: S/. {datos['cuota']:,.2f}
+└─ Cobertura: {datos['cuota_cobertura']} clientes
 
 💼 DESEMPEÑO:
-├─ Ventas Actuales: S/. {datos['total_ventas']:,.2f}
-├─ Cumplimiento: {cumpl:.1f}% {cumplimiento_emoji}
+├─ Ventas : S/. {datos['total_ventas']:,.2f}
+├─ Avance :{cumpl:.1f}% {cumplimiento_emoji}
 ├─ Cobertura: {datos['clientes']} clientes
-├─ Ticket Promedio: S/. {datos['ticket_promedio']:,.2f}
+├─ Ticket : S/. {datos['ticket_promedio']:,.2f}
 └─ Ventas TROYA: S/. {datos['ventas_troya']:,.2f}
 
 ⚠️ TROYA RESUMEN:
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
 ├─ No Compraron: {datos['clientes_troya_no_compraron']} clientes
-└─ Ticket TROYA: S/. {datos['ticket_troya']:,.2f}
+└─ Ticket : S/. {datos['ticket_troya']:,.2f}
 
 📅 RITMO DEL MES:
-├─ Días laborables transcurridos: {datos['dias_transcurridos']}
-├─ Días laborables restantes: {datos['dias_restantes']}
-└─ Venta promedio/día: S/. {datos['venta_promedio_diaria']:,.2f}
+├─ Días transcurridos: {datos['dias_transcurridos']}
+├─ Días restantes: {datos['dias_restantes']}
+└─ Venta x día: S/. {datos['venta_promedio_diaria']:,.2f}
 
 🚀 PROYECCIÓN AL CIERRE:
 ├─ Ventas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_proyectado']:.1f}%) {proyectado_emoji}
 └─ Cobertura: {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
 
 💪 ¡Sigue adelante!
-Sistema Automatizado N&J"""
+🤖 Bot N&J"""
 
 # ============================================================
 # 9. REPORTE JEFE (EXISTENTE)
@@ -819,33 +801,33 @@ def generar_mensaje_jefe(datos):
 {ahora_local().strftime('%d/%m/%Y %H:%M')}
 
 🎯 OBJETIVOS MES:
-├─ Cuota Ventas: S/. {datos['cuota_ventas']:,.2f}
-└─ Cuota Cobertura: {datos['cuota_cobertura']} clientes
+├─ Ventas: S/. {datos['cuota_ventas']:,.2f}
+└─ Cobertura: {datos['cuota_cobertura']} clientes
 
 💼 DESEMPEÑO:
-├─ Ventas Actuales: S/. {datos['total_ventas']:,.2f}
-├─ Cumplimiento: {cumpl:.1f}% {cumplimiento_emoji}
+├─ Ventas : S/. {datos['total_ventas']:,.2f}
+├─ Avance : {cumpl:.1f}% {cumplimiento_emoji}
 ├─ Cobertura: {datos['cobertura']} clientes
-├─ Ticket Promedio: S/. {datos['ticket_promedio']:,.2f}
-└─ Ventas TROYA: S/. {datos['ventas_troya']:,.2f}
+├─ Ticket : S/. {datos['ticket_promedio']:,.2f}
+└─ TROYA: S/. {datos['ventas_troya']:,.2f}
 
 📋 LÍNEAS DE NEGOCIO:
 {lineas_txt if lineas_txt else '  • Sin ventas registradas'}
 ⚠️ RESUMEN TROYA:
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
 ├─ No Compraron: {datos['clientes_troya_no_compraron']} clientes
-└─ Ticket Promedio: S/. {datos['ticket_troya']:,.2f}
+└─ Ticket : S/. {datos['ticket_troya']:,.2f}
 
 📅 RITMO DEL MES:
-├─ Días laborables transcurridos: {datos['dias_transcurridos']}
-├─ Días laborables restantes: {datos['dias_restantes']}
-└─ Venta promedio/día: S/. {datos['venta_promedio_diaria']:,.2f}
+├─ Días transcurridos: {datos['dias_transcurridos']}
+├─ Días restantes: {datos['dias_restantes']}
+└─ Venta x día: S/. {datos['venta_promedio_diaria']:,.2f}
 
 🚀 PROYECCIÓN AL CIERRE:
 ├─ Ventas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_ventas_proyectado']:.1f}%) {proyectado_ventas_emoji}
 └─ Cobertura: {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
 
-📞 Equipo de Ventas N&J"""
+🤖 Bot N&J"""
 
 # ============================================================
 # 10. WHATSAPP
