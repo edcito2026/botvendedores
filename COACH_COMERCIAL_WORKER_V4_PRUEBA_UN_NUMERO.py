@@ -421,18 +421,26 @@ estos son tus 5 con menor venta:
             s+=f"{i}️⃣ {r['producto'][:45]}\n"
 
     s+=f"""
-
 💵 TICKET
 Actual: S/. {a['ticket']:,.2f}
 👉 Busca aumentar el valor de cada pedido.
 
 🔥 PRIORIDAD DE HOY
-1️⃣ Alcanzar S/. {a['objetivo']:,.2f}
-2️⃣ Recuperar clientes TROYA / clientes con compra perdida
-3️⃣ Impulsar promociones y productos con menor venta
-4️⃣ Aumentar ticket por cliente
-
-🤖 Coach Comercial N&J"""
+1️⃣ Alcanzar S/. {a['objetivo']:,.2f} de venta
+"""
+    prioridad_num=2
+    if a['troya']:
+        s+=f"{prioridad_num}️⃣ Recuperar clientes TROYA del {d.lower()}\n"
+        prioridad_num+=1
+    if a['recuperacion']:
+        s+=f"{prioridad_num}️⃣ Recuperar los {len(a['recuperacion'])} clientes que compraron el mes anterior\n"
+        prioridad_num+=1
+    s+=f"{prioridad_num}️⃣ Impulsar las 3 promociones con menor venta\n"
+    prioridad_num+=1
+    s+=f"{prioridad_num}️⃣ Trabajar los 5 productos con menor venta\n"
+    prioridad_num+=1
+    s+=f"{prioridad_num}️⃣ Aumentar el ticket de S/. {a['ticket']:,.2f}\n"
+    s+="\n🤖 Coach Comercial N&J"
     return s
 
 
