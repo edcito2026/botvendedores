@@ -126,7 +126,8 @@ def troya(cur,n,p,didx):
         SELECT CAST(Cod_Clie AS REAL) id,
                SUM(CAST(Imp_Total AS REAL)) venta_actual
         FROM VENTAS2026
-        WHERE Proveedor='ARCOR'
+        WHERE Vendedor=?
+          AND Proveedor='ARCOR'
           AND Periodo=?
           AND CAST(Imp_Total AS REAL)>0
         GROUP BY CAST(Cod_Clie AS REAL)
@@ -172,7 +173,7 @@ def troya(cur,n,p,didx):
       c.Raz_Social
     LIMIT 10
     """
-    rows=cur.execute(q,(p,n,(str(int(p[:4])-1)+"12" if p[4:6]=="01" else p[:4]+f"{int(p[4:6])-1:02d}"),n,n,dv)).fetchall()
+    rows=cur.execute(q,(n,p,n,(str(int(p[:4])-1)+"12" if p[4:6]=="01" else p[:4]+f"{int(p[4:6])-1:02d}"),n,n,dv)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -452,22 +453,170 @@ def enviar(t,m):
         logger.error('❌ WhatsApp %s %s',r.status_code,r.text[:300]); return False
     except Exception as e: logger.exception('❌ Envío Coach: %s',e); return False
 
+def resumen_jefe(cur,c,vs):
+    """
+    Resumen consolidado para JEFE DE VENTAS.
+    Usa la misma fuente y filtros del Coach:
+    - ARCOR
+    - período actual
+    - vendedores de vendedores.xlsx con rol vendedor
+    """
+    filas=[]
+    total_cuota=0.0
+    total_venta=0.0
+    total_clientes=0
+
+    for t,u in vs.items():
+        rol=u['rol']
+        if any(x in rol for x in ('JEFE','SUPERVISOR','GERENTE','COORDINADOR')):
+            continue
+
+        q,cob=cuota(cur,u['nombre'],c)
+        v,cli,ticket=base(cur,u['nombre'],c['periodo'])
+        if q<=0:
+            continue
+
+        avance=v/q if q else 0
+        faltante=max(q-v,0)
+        filas.append({
+            'nombre':u['nombre'],
+            'cuota':q,
+            'venta':v,
+            'falta':faltante,
+            'avance':avance,
+            'ticket':ticket,
+            'clientes':cli
+        })
+        total_cuota+=q
+        total_venta+=v
+        total_clientes+=cli
+
+    filas.sort(key=lambda x:x['avance'],reverse=True)
+    total_falta=max(total_cuota-total_venta,0)
+    avance_total=total_venta/total_cuota if total_cuota else 0
+
+    # Ritmo esperado según días laborables transcurridos.
+    total_dias,trans,rest=dias_mes(c)
+    esperado=len(trans)/len(total_dias) if total_dias else 0
+    brecha=(avance_total-esperado)*100
+
+    return {
+        'filas':filas,
+        'cuota':total_cuota,
+        'venta':total_venta,
+        'falta':total_falta,
+        'avance':avance_total,
+        'clientes':total_clientes,
+        'dias_trans':len(trans),
+        'dias_rest':len(rest),
+        'dias_total':len(total_dias),
+        'esperado':esperado,
+        'brecha':brecha
+    }
+
+
+def msg_jefe(r,c):
+    d=DIAS[c['hoy'].weekday()]
+    if r['brecha'] < -10:
+        estado="🚨 RECUPERACIÓN"
+    elif r['brecha'] < -5:
+        estado="🔥 REACCIÓN"
+    elif r['brecha'] <= 5:
+        estado="🎯 ENFOQUE"
+    else:
+        estado="🚀 BUEN RITMO"
+
+    s=f"""📊 *RESUMEN COMERCIAL — {d}*
+
+{estado}
+
+📊 Cuota total: S/. {r['cuota']:,.2f}
+💰 Venta acumulada: S/. {r['venta']:,.2f}
+🔻 Falta: S/. {r['falta']:,.2f}
+📈 Avance: {r['avance']*100:.1f}%
+📅 Días laborables: {r['dias_trans']}/{r['dias_total']}
+⏳ Días restantes: {r['dias_rest']}
+🎯 Avance esperado: {r['esperado']*100:.1f}%
+📌 Brecha vs ritmo: {r['brecha']:+.1f} pp
+
+👥 VENDEDORES
+
+"""
+    if not r['filas']:
+        s+="No se encontraron vendedores con cuota ARCOR para el período actual."
+    else:
+        for i,x in enumerate(r['filas'],1):
+            icon="🟢" if x['avance']>=r['esperado'] else "🔴"
+            s+=f"{icon} {i}. {x['nombre'].title()}\n"
+            s+=f"   {x['avance']*100:.1f}% | S/. {x['venta']:,.2f} / S/. {x['cuota']:,.2f}\n"
+
+    # Oportunidades de gestión: 3 con menor avance.
+    bajos=sorted(r['filas'],key=lambda x:x['avance'])[:3]
+    if bajos:
+        s+="\n🔥 *FOCO DE GESTIÓN*\n"
+        for x in bajos:
+            s+=f"• {x['nombre'].title()} — {x['avance']*100:.1f}% | Falta S/. {x['falta']:,.2f}\n"
+
+    s+="\n🤖 Coach Comercial N&J"
+    return s
+
+
 def ejecutar():
     c=contexto()
-    if not laborable(c['hoy']): logger.info('⏭️ Día no laborable: %s',c['hoy']); return
-    init_control(); vs=vendedores(); conn=db()
+    if not laborable(c['hoy']):
+        logger.info('⏭️ Día no laborable: %s',c['hoy'])
+        return
+
+    init_control()
+    vs=vendedores()
+    conn=db()
+    enviados=0
     try:
+        # 1) Coach individual a vendedores.
         for t,u in vs.items():
-            if any(x in u['rol'] for x in ('JEFE','SUPERVISOR','GERENTE','COORDINADOR')): continue
-            if not reclamar(c['hoy'].isoformat(),t,u['nombre']): continue
+            rol=u['rol']
+            if any(x in rol for x in ('JEFE','SUPERVISOR','GERENTE','COORDINADOR')):
+                continue
+
+            if not reclamar(c['hoy'].isoformat(),t,u['nombre']):
+                logger.info('⏭️ Ya enviado hoy a %s (*%s)',u['nombre'],t[-4:])
+                continue
+
             try:
                 a=analizar(conn.cursor(),u['nombre'],c)
-                estado, brecha_pp = estado_comercial(a,c)
+                estado,brecha_pp=estado_comercial(a,c)
                 logger.info('🧠 %s | estado=%s | brecha=%+.1f pp',u['nombre'],estado,brecha_pp)
-                if a['cuota']<=0: logger.warning('⚠️ Sin cuota ARCOR: %s',u['nombre']); continue
-                enviar(t,msg(a,c))
-            except Exception: logger.exception('❌ Coach %s',u['nombre'])
-    finally: conn.close()
+
+                if a['cuota']<=0:
+                    logger.warning('⚠️ Sin cuota ARCOR: %s',u['nombre'])
+                    continue
+
+                if enviar(t,msg(a,c)):
+                    enviados+=1
+            except Exception:
+                logger.exception('❌ Coach %s',u['nombre'])
+
+        # 2) Resumen consolidado a cada JEFE DE VENTAS.
+        r=resumen_jefe(conn.cursor(),c,vs)
+        for t,u in vs.items():
+            if 'JEFE' not in u['rol']:
+                continue
+
+            clave=f"JEFE_{t}"
+            if not reclamar(c['hoy'].isoformat(),clave,u['nombre']):
+                logger.info('⏭️ Resumen jefe ya enviado hoy a %s (*%s)',u['nombre'],t[-4:])
+                continue
+
+            try:
+                if enviar(t,msg_jefe(r,c)):
+                    enviados+=1
+                    logger.info('✅ Resumen JEFE enviado a %s (*%s)',u['nombre'],t[-4:])
+            except Exception:
+                logger.exception('❌ Resumen JEFE %s',u['nombre'])
+    finally:
+        conn.close()
+
+    logger.info('✅ COACH FINALIZADO | mensajes enviados=%d',enviados)
 
 def segundos():
     a=now(); x=a.replace(hour=HORA,minute=MINUTO,second=0,microsecond=0)
