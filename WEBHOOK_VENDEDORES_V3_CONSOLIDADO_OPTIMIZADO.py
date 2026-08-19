@@ -350,9 +350,9 @@ def obtener_clientes_troya(nombre_vendedor):
         cursor.execute("""
             SELECT Cod_Clie, Raz_Social, Dia_Sem
             FROM clientes
-            WHERE Calif = 'D' AND Vendedor = ?
+            WHERE Calif = 'D' AND Vendedor LIKE ?
             ORDER BY Raz_Social
-        """, (nombre_vendedor,))
+        """, (f"%{nombre_vendedor}%",))
 
         clientes = [dict(row) for row in cursor.fetchall()]
         logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA")
