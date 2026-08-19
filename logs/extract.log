@@ -1,0 +1,111 @@
+[2026-08-18 13:04:36] ============================================================
+[2026-08-18 13:04:36] 🤖 INICIANDO ROBOT - EXTRACTOR OPTIMIZADO
+[2026-08-18 13:04:36] ============================================================
+[2026-08-18 13:04:36] BD fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db (5629.41 MB)
+[2026-08-18 13:04:36] Respaldando BD anterior...
+[2026-08-18 13:04:36] Creando tabla VENTAS2026...
+[2026-08-18 13:04:36] Creando tabla clientes...
+[2026-08-18 13:04:36] Creando tabla cuotas...
+[2026-08-18 13:04:36] Extrayendo VENTAS2026 (Proveedor = ARCOR)...
+[2026-08-18 13:04:37] Total de registros a copiar: 128779
+[2026-08-18 13:04:38] ✓ 128779 registros de VENTAS2026 copiados (Periodo normalizado)
+[2026-08-18 13:04:38] Extrayendo tabla clientes...
+[2026-08-18 13:04:38] Total de clientes: 7954
+[2026-08-18 13:04:38] ✓ 7954 registros de clientes copiados
+[2026-08-18 13:04:38] Extrayendo cuotas ARCOR...
+[2026-08-18 13:04:38] Total de cuotas a copiar: 312
+[2026-08-18 13:04:38] ✓ 312 registros de cuotas ARCOR copiados
+[2026-08-18 13:04:38] Creando índices para optimización...
+[2026-08-18 13:04:39] ============================================================
+[2026-08-18 13:04:39] ✅ EXTRACCIÓN COMPLETADA EXITOSAMENTE
+[2026-08-18 13:04:39] ============================================================
+[2026-08-18 13:04:39] BD Fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db
+[2026-08-18 13:04:39] Tamaño: 5629.41 MB
+[2026-08-18 13:04:39] BD Destino: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ventas.db
+[2026-08-18 13:04:39] Tamaño: 68.05 MB
+[2026-08-18 13:04:39] VENTAS2026: 128,779
+[2026-08-18 13:04:39] clientes: 7,954
+[2026-08-18 13:04:39] cuotas: 312
+[2026-08-18 13:04:39] TIEMPO: 2.83 segundos
+[2026-08-18 13:04:39] ============================================================
+[2026-08-18 13:08:21] ============================================================
+[2026-08-18 13:08:21] 🤖 INICIANDO ROBOT - EXTRACTOR OPTIMIZADO
+[2026-08-18 13:08:21] ============================================================
+[2026-08-18 13:08:21] BD fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db (5629.41 MB)
+[2026-08-18 13:08:21] Respaldando BD anterior...
+[2026-08-18 13:08:21] Creando tabla VENTAS2026...
+[2026-08-18 13:08:21] Creando tabla clientes...
+[2026-08-18 13:08:21] Creando tabla cuotas...
+[2026-08-18 13:08:21] Extrayendo VENTAS2026 (Proveedor = ARCOR)...
+[2026-08-18 13:08:22] Total de registros a copiar: 128779
+[2026-08-18 13:08:23] ✓ 128779 registros de VENTAS2026 copiados (Periodo normalizado)
+[2026-08-18 13:08:23] Extrayendo tabla clientes...
+[2026-08-18 13:08:23] Total de clientes: 7954
+[2026-08-18 13:08:23] ✓ 7954 registros de clientes copiados
+[2026-08-18 13:08:23] Extrayendo cuotas ARCOR...
+[2026-08-18 13:08:23] Total de cuotas a copiar: 312
+[2026-08-18 13:08:23] ✓ 312 registros de cuotas ARCOR copiados
+[2026-08-18 13:08:23] Creando índices para optimización...
+[2026-08-18 13:08:24] ============================================================
+[2026-08-18 13:08:24] ✅ EXTRACCIÓN COMPLETADA EXITOSAMENTE
+[2026-08-18 13:08:24] ============================================================
+[2026-08-18 13:08:24] BD Fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db
+[2026-08-18 13:08:24] Tamaño: 5629.41 MB
+[2026-08-18 13:08:24] BD Destino: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ventas.db
+[2026-08-18 13:08:24] Tamaño: 68.05 MB
+[2026-08-18 13:08:24] VENTAS2026: 128,779
+[2026-08-18 13:08:24] clientes: 7,954
+[2026-08-18 13:08:24] cuotas: 312
+[2026-08-18 13:08:24] TIEMPO: 2.66 segundos
+[2026-08-18 13:08:24] ============================================================
+[2026-08-18 19:16:34] ============================================================
+[2026-08-18 19:16:34] 🤖 INICIANDO ROBOT - EXTRACTOR OPTIMIZADO
+[2026-08-18 19:16:34] ============================================================
+[2026-08-18 19:16:34] BD fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db (5629.41 MB)
+[2026-08-18 19:16:34] Respaldando BD anterior...
+[2026-08-18 19:16:34] Advertencia en backup: [WinError 32] El proceso no tiene acceso al archivo porque está siendo utilizado por otro proceso: 'E:\\PRUEBASEXTRACTOR\\Automatizacion\\WhatsApp\\botvendedores\\ventas.db'
+[2026-08-18 19:16:34] Creando tabla VENTAS2026...
+[2026-08-18 19:16:34] Creando tabla clientes...
+[2026-08-18 19:16:34] Creando tabla cuotas...
+[2026-08-18 19:16:34] Extrayendo VENTAS2026 (Proveedor = ARCOR)...
+[2026-08-18 19:16:35] Total de registros a copiar: 129307
+[2026-08-18 19:16:35] Error extrayendo VENTAS2026: UNIQUE constraint failed: VENTAS2026.ID
+[2026-08-18 19:16:35] ❌ Error: UNIQUE constraint failed: VENTAS2026.ID
+[2026-08-18 19:16:35] Traceback (most recent call last):
+  File "E:\PRUEBASEXTRACTOR\ACTUALIZADOR_V8.11_ROBOT_INTEGRADO.py", line 830, in procesar_robot
+    ventas_count = extraer_ventas_robot(conn_source, cursor_target)
+  File "E:\PRUEBASEXTRACTOR\ACTUALIZADOR_V8.11_ROBOT_INTEGRADO.py", line 714, in extraer_ventas_robot
+    cursor_target.executemany(insert_sql, rows_procesadas)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.IntegrityError: UNIQUE constraint failed: VENTAS2026.ID
+
+[2026-08-18 19:17:14] ============================================================
+[2026-08-18 19:17:14] 🤖 INICIANDO ROBOT - EXTRACTOR OPTIMIZADO
+[2026-08-18 19:17:14] ============================================================
+[2026-08-18 19:17:14] BD fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db (5629.41 MB)
+[2026-08-18 19:17:14] Respaldando BD anterior...
+[2026-08-18 19:17:14] Creando tabla VENTAS2026...
+[2026-08-18 19:17:14] Creando tabla clientes...
+[2026-08-18 19:17:14] Creando tabla cuotas...
+[2026-08-18 19:17:14] Extrayendo VENTAS2026 (Proveedor = ARCOR)...
+[2026-08-18 19:17:14] Total de registros a copiar: 129307
+[2026-08-18 19:17:15] ✓ 129307 registros de VENTAS2026 copiados (Periodo normalizado)
+[2026-08-18 19:17:15] Extrayendo tabla clientes...
+[2026-08-18 19:17:15] Total de clientes: 7954
+[2026-08-18 19:17:15] ✓ 7954 registros de clientes copiados
+[2026-08-18 19:17:15] Extrayendo cuotas ARCOR...
+[2026-08-18 19:17:15] Total de cuotas a copiar: 312
+[2026-08-18 19:17:15] ✓ 312 registros de cuotas ARCOR copiados
+[2026-08-18 19:17:15] Creando índices para optimización...
+[2026-08-18 19:17:16] ============================================================
+[2026-08-18 19:17:16] ✅ EXTRACCIÓN COMPLETADA EXITOSAMENTE
+[2026-08-18 19:17:16] ============================================================
+[2026-08-18 19:17:16] BD Fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db
+[2026-08-18 19:17:16] Tamaño: 5629.41 MB
+[2026-08-18 19:17:16] BD Destino: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ventas.db
+[2026-08-18 19:17:16] Tamaño: 68.31 MB
+[2026-08-18 19:17:16] VENTAS2026: 129,307
+[2026-08-18 19:17:16] clientes: 7,954
+[2026-08-18 19:17:16] cuotas: 312
+[2026-08-18 19:17:16] TIEMPO: 2.69 segundos
+[2026-08-18 19:17:16] ============================================================
