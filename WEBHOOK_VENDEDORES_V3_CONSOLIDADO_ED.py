@@ -342,11 +342,19 @@ def obtener_clientes_troya(nombre_vendedor):
 
 
 def obtener_clientes_troya_generales():
-    """Obtiene clientes TROYA de TODOS los vendedores sin duplicar importes.
+    """Obtiene clientes TROYA consolidados para jefe/supervisor.
 
-    Las ventas se agregan primero por cliente + vendedor + periodo y
-    recién después se unen con clientes. Esto evita la multiplicación
-    de filas que ocurría al hacer JOIN simultáneo de agosto y julio.
+    La venta TROYA se toma de VENTAS2026 como fuente de verdad:
+      - Proveedor = ARCOR
+      - Calif = D
+      - período actual/anterior
+
+    Las ventas se agregan primero por Cod_Clie + período y luego se
+    relacionan con clientes SOLO por Cod_Clie.
+
+    No se utiliza Cdg_Vend para decidir si una venta entra al
+    consolidado. La conciliación mostró diferencias de Cdg_Vend entre
+    VENTAS2026 y clientes que excluían ventas válidas.
     """
     try:
         logger.info("🔍 Buscando TROYA GENERAL para todos los vendedores")
@@ -361,23 +369,21 @@ def obtener_clientes_troya_generales():
         anio_anterior = ahora.year if ahora.month > 1 else ahora.year - 1
         periodo_anterior = f"{anio_anterior}{mes_anterior:02d}"
 
-        # IMPORTANTE:
-        # 1) Primero consolidamos VENTAS2026 por cliente + vendedor + periodo.
-        # 2) Luego hacemos UN solo JOIN contra ese resultado.
-        # Así evitamos multiplicar ventas de agosto x ventas de julio.
+        # Fuente de verdad para importes:
+        # VENTAS2026 filtrada por ARCOR + Calif='D'.
+        # Se consolida antes del JOIN para evitar multiplicación de filas.
         query = """
         WITH ventas_agregadas AS (
             SELECT
                 CAST(Cod_Clie AS REAL) AS Cod_Clie_real,
-                CAST(Cdg_Vend AS REAL) AS Cdg_Vend_real,
                 Periodo,
                 ROUND(SUM(CAST(Imp_Total AS REAL)), 2) AS venta
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR'
+              AND Calif = 'D'
               AND Periodo IN (?, ?)
             GROUP BY
                 CAST(Cod_Clie AS REAL),
-                CAST(Cdg_Vend AS REAL),
                 Periodo
         )
         SELECT
@@ -396,7 +402,6 @@ def obtener_clientes_troya_generales():
         FROM clientes c
         LEFT JOIN ventas_agregadas va
           ON CAST(c.Cod_Clie AS REAL) = va.Cod_Clie_real
-         AND CAST(c.Cdg_Vend AS REAL) = va.Cdg_Vend_real
         WHERE c.Calif = 'D'
         GROUP BY
             c.Cod_Clie,
@@ -416,9 +421,17 @@ def obtener_clientes_troya_generales():
         clientes = [dict(row) for row in cursor.fetchall()]
 
         for cliente in clientes:
-            cliente["tiene_compras"] = cliente["venta_actual"] > 0
+            cliente["tiene_compras"] = float(cliente.get("venta_actual") or 0) > 0
 
-        logger.info(f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL")
+        total_actual = sum(float(c.get("venta_actual") or 0) for c in clientes)
+        total_anterior = sum(float(c.get("venta_anterior") or 0) for c in clientes)
+
+        logger.info(
+            f"📊 Encontrados: {len(clientes)} clientes TROYA TOTAL | "
+            f"Actual: S/. {total_actual:,.2f} | "
+            f"Anterior: S/. {total_anterior:,.2f}"
+        )
+
         conn.close()
         return clientes
 
