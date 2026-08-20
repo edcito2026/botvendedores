@@ -536,8 +536,41 @@ No tienes clientes TROYA registrados actualmente.
             dia = cliente.get('DV', 'N/A')
             mensaje += f"{cliente_nombre} {dia}\n"
 
-    # Resumen
-    mensaje += f"\n📊 Total {mes_nombre}: S/. {total_actual:,.0f}"
+    # Resumen y comparativo contra el mes anterior.
+    total_anterior = sum(float(c.get("venta_anterior") or 0) for c in clientes)
+    diferencia = total_actual - total_anterior
+    if total_anterior > 0:
+        variacion_pct = (diferencia / total_anterior) * 100
+    else:
+        variacion_pct = 100.0 if total_actual > 0 else 0.0
+
+    mensaje += (
+        f"\n📊 Total {mes_nombre}: S/. {total_actual:,.0f}"
+        f"\n📈 Comparativo TROYA"
+        f"\n├─ {mes_anterior_nombre}: S/. {total_anterior:,.0f}"
+        f"\n├─ {mes_nombre}: S/. {total_actual:,.0f}"
+        f"\n└─ Variación: S/. {diferencia:+,.0f} ({variacion_pct:+.1f}%)"
+    )
+
+    if total_actual > total_anterior:
+        mensaje += (
+            "\n\n🏆 ¡FELICITACIONES! 🎉"
+            "\nSuperaste tus ventas a clientes TROYA del mes anterior."
+            "\n¡Sigue así y vamos por más! 💪🚀"
+        )
+    elif total_actual < total_anterior:
+        mensaje += (
+            "\n\n🎯 ¡A ENFOCARSE EN TROYA!"
+            "\nEste mes estás por debajo de tu venta del mes anterior."
+            "\nVisita y trabaja especialmente a tus clientes TROYA "
+            "para recuperar la brecha. 💪🔥"
+        )
+    else:
+        mensaje += (
+            "\n\n💪 ¡VAMOS POR MÁS TROYA!"
+            "\nMantienes el mismo nivel de ventas del mes anterior."
+            "\nCada visita y cada compra cuenta. 🚀"
+        )
 
     mensaje += "\n\n🤖 Bot N&J"
 

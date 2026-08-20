@@ -81,7 +81,7 @@ def reclamar(fecha,t,n):
 def cuota(cur,n,c):
     r=cur.execute("SELECT COALESCE(SUM(Cuota_Soles),0) cuota,COALESCE(SUM(Cuota_Cobertura),0) cob FROM cuotas WHERE Vendedor=? AND AÑO=? AND NRO_MES=? AND Proveedor='ARCOR'",(n,c['anio'],c['mes'])).fetchone(); return float(r['cuota'] or 0),int(r['cob'] or 0)
 def base(cur,n,p):
-    r=cur.execute("SELECT COALESCE(SUM(CAST(Imp_Total AS REAL)),0) v,COUNT(DISTINCT Cod_Clie) cli FROM VENTAS2026 WHERE Vendedor=? AND Periodo=? AND Proveedor='ARCOR' AND CAST(Imp_Total AS REAL)>0",(n,p)).fetchone(); v=float(r['v'] or 0); cli=int(r['cli'] or 0); return v,cli,(v/cli if cli else 0)
+    r=cur.execute("SELECT COALESCE(SUM(CAST(Imp_Total AS REAL)),0) v,COUNT(DISTINCT Cod_Clie) cli FROM VENTAS2026 WHERE Vendedor=? AND Periodo=? AND Proveedor='ARCOR'",(n,p)).fetchone(); v=float(r['v'] or 0); cli=int(r['cli'] or 0); return v,cli,(v/cli if cli else 0)
 def dia_idx(v):
     s=str(v or '').upper(); names={'LUNES':0,'MARTES':1,'MIERCOLES':2,'MIÉRCOLES':2,'JUEVES':3,'VIERNES':4,'SABADO':5,'SÁBADO':5}
     try:
@@ -384,29 +384,26 @@ def msg(a,c):
 🎯 VENTA OBJETIVO HOY
 S/. {a['objetivo']:,.2f}
 
-📅 Este objetivo considera tu comportamiento histórico
-por día de semana y los días laborables que quedan.
-
 👥 COBERTURA
-Busca aproximadamente {a['clientes_necesarios']} clientes con compra,
-usando tu ticket actual de S/. {a['ticket']:,.2f}."""
+Necesitamos  {a['clientes_necesarios']} pedidos ARCOR,
+con venta minima de S/. {a['ticket']:,.2f}."""
 
     if a['troya']:
         s+=f"""
 
 🎯 TROYA — {d}
-Clientes de tu cartera TROYA que debes priorizar hoy:
+Clientes TROYA que debes priorizar hoy:
 """
         for i,r in enumerate(a['troya'],1):
             marca="🔥" if r['venta_anterior']>0 else "•"
             extra=" — compró mes anterior" if r['venta_anterior']>0 else ""
             s+=f"{marca} {i}. {r['Raz_Social'][:40]}{extra}\n"
-        s+="👉 Son clientes que aún no compraron este mes. Prioriza primero los que compraron el mes anterior."
+        s+="👉 Son clientes que aún no compraron este mes. Prioriza ATENCION."
     if a['recuperacion']:
-        s+="\n\n🔄 CLIENTES A RECUPERAR — "+d+"\nCompraron el mes anterior y aún no compraron este mes:\n"
+        s+="\n\n🔄 CLIENTES A RECUPERAR — "+d+"\nEl mes anterior tuvieron buenas compras:\n"
         for i,r in enumerate(a['recuperacion'],1):
             s+=f"{i}️⃣ {r['Raz_Social'][:45]}\n"
-        s+="👉 Prioridad: recuperar estas compras hoy."
+        s+="👉 PRIORIDAD GENERAR VENTAS."
 
     if a['promos']:
         s+="\n\n🏷️ PROMOCIONES A IMPULSAR\n"
@@ -415,8 +412,7 @@ Clientes de tu cartera TROYA que debes priorizar hoy:
 
     if a['productos']:
         s+="""\n📦 PRODUCTOS A IMPULSAR
-Dentro de los 20 productos más vendidos de ARCOR,
-estos son tus 5 con menor venta:
+Estos productos deben ayudar a incrementar nuestra venta:
 """
         for i,r in enumerate(a['productos'],1):
             s+=f"{i}️⃣ {r['producto'][:45]}\n"
@@ -424,17 +420,17 @@ estos son tus 5 con menor venta:
     s+=f"""
 💵 TICKET
 Actual: S/. {a['ticket']:,.2f}
-👉 Busca aumentar el valor de cada pedido.
+👉 Vamos a elevar ese promedio
 
-🔥 PRIORIDAD DE HOY
-1️⃣ Alcanzar S/. {a['objetivo']:,.2f} de venta
+🔥 ACCIONES DE HOY
+1️⃣ Minimo S/. {a['objetivo']:,.2f} de venta
 """
     prioridad_num=2
     if a['troya']:
         s+=f"{prioridad_num}️⃣ Recuperar clientes TROYA del {d.lower()}\n"
         prioridad_num+=1
     if a['recuperacion']:
-        s+=f"{prioridad_num}️⃣ Recuperar los {len(a['recuperacion'])} clientes que compraron el mes anterior\n"
+        s+=f"{prioridad_num}️⃣ Enfocarte en los {len(a['recuperacion'])} clientes que compraron el mes anterior\n"
         prioridad_num+=1
     s+=f"{prioridad_num}️⃣ Impulsar las 3 promociones con menor venta\n"
     prioridad_num+=1
