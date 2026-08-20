@@ -109,3 +109,33 @@ sqlite3.IntegrityError: UNIQUE constraint failed: VENTAS2026.ID
 [2026-08-18 19:17:16] cuotas: 312
 [2026-08-18 19:17:16] TIEMPO: 2.69 segundos
 [2026-08-18 19:17:16] ============================================================
+[2026-08-19 18:54:50] ============================================================
+[2026-08-19 18:54:50] 🤖 INICIANDO ROBOT - EXTRACTOR OPTIMIZADO
+[2026-08-19 18:54:50] ============================================================
+[2026-08-19 18:54:50] BD fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db (5629.41 MB)
+[2026-08-19 18:54:50] Respaldando BD anterior...
+[2026-08-19 18:54:50] Creando tabla VENTAS2026...
+[2026-08-19 18:54:50] Creando tabla clientes...
+[2026-08-19 18:54:50] Creando tabla cuotas...
+[2026-08-19 18:54:50] Extrayendo VENTAS2026 (Proveedor = ARCOR)...
+[2026-08-19 18:54:51] Total de registros a copiar: 130157
+[2026-08-19 18:54:51] ✓ 130157 registros de VENTAS2026 copiados (Periodo normalizado)
+[2026-08-19 18:54:52] Extrayendo tabla clientes...
+[2026-08-19 18:54:52] Total de clientes: 7954
+[2026-08-19 18:54:52] ✓ 7954 registros de clientes copiados
+[2026-08-19 18:54:52] Extrayendo cuotas ARCOR...
+[2026-08-19 18:54:52] Total de cuotas a copiar: 312
+[2026-08-19 18:54:52] ✓ 312 registros de cuotas ARCOR copiados
+[2026-08-19 18:54:52] Creando índices para optimización...
+[2026-08-19 18:54:52] ============================================================
+[2026-08-19 18:54:52] ✅ EXTRACCIÓN COMPLETADA EXITOSAMENTE
+[2026-08-19 18:54:52] ============================================================
+[2026-08-19 18:54:52] BD Fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db
+[2026-08-19 18:54:52] Tamaño: 5629.41 MB
+[2026-08-19 18:54:52] BD Destino: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ventas.db
+[2026-08-19 18:54:52] Tamaño: 68.74 MB
+[2026-08-19 18:54:52] VENTAS2026: 130,157
+[2026-08-19 18:54:52] clientes: 7,954
+[2026-08-19 18:54:52] cuotas: 312
+[2026-08-19 18:54:52] TIEMPO: 2.67 segundos
+[2026-08-19 18:54:52] ============================================================
