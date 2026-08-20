@@ -509,6 +509,8 @@ No tienes clientes TROYA registrados actualmente.
 
     ahora = ahora_local()
     mes_nombre = MESES_ES[ahora.month - 1]
+    mes_anterior = ahora.month - 1 if ahora.month > 1 else 12
+    mes_anterior_nombre = MESES_ES[mes_anterior - 1]
 
     # Totales
     total_actual = sum(c.get('venta_actual', 0) for c in clientes)
