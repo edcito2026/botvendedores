@@ -860,15 +860,50 @@ def obtener_datos_generales():
         troya_venta = cursor.fetchone()
         datos["ventas_troya"] = troya_venta["ventas_troya"] or 0
 
+        # Líneas de negocio EXCLUYENDO SAYON de cada línea a la que pertenece.
+        # SAYON se muestra como una línea independiente para no mezclar su venta
+        # con la línea de negocio original del producto.
         cursor.execute("""
-            SELECT lin_neg, ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS ventas_linea
+            SELECT lin_neg,
+                   ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS ventas_linea
             FROM VENTAS2026
             WHERE Proveedor = 'ARCOR' AND Periodo = ?
             GROUP BY lin_neg
             ORDER BY ventas_linea DESC
         """, (periodo,))
         lineas = cursor.fetchall()
-        datos["lineas_negocio"] = {(row["lin_neg"] if row["lin_neg"] else "SIN LÍNEA"): row["ventas_linea"] for row in lineas}
+
+        cursor.execute("""
+            SELECT lin_neg,
+                   ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS ventas_sayon_linea
+            FROM VENTAS2026
+            WHERE Proveedor = 'ARCOR'
+              AND Periodo = ?
+              AND UPPER(COALESCE(Producto, '')) LIKE '%SAYON%'
+            GROUP BY lin_neg
+        """, (periodo,))
+        sayon_por_linea = {
+            (row["lin_neg"] if row["lin_neg"] else "SIN LÍNEA"): float(row["ventas_sayon_linea"] or 0)
+            for row in cursor.fetchall()
+        }
+
+        datos["lineas_negocio"] = {}
+        for row in lineas:
+            linea = row["lin_neg"] if row["lin_neg"] else "SIN LÍNEA"
+            venta_linea = float(row["ventas_linea"] or 0)
+            venta_sayon_linea = sayon_por_linea.get(linea, 0)
+            datos["lineas_negocio"][linea] = round(max(0, venta_linea - venta_sayon_linea), 2)
+
+        # Venta SAYON independiente: todos los productos cuyo nombre contiene SAYON.
+        cursor.execute("""
+            SELECT ROUND(COALESCE(SUM(CAST(Imp_Total AS REAL)), 0), 2) AS ventas_sayon
+            FROM VENTAS2026
+            WHERE Proveedor = 'ARCOR'
+              AND Periodo = ?
+              AND UPPER(COALESCE(Producto, '')) LIKE '%SAYON%'
+        """, (periodo,))
+        sayon_data = cursor.fetchone()
+        datos["ventas_sayon"] = float(sayon_data["ventas_sayon"] or 0)
 
         cursor.execute("""
             SELECT COUNT(DISTINCT Cod_Clie) AS clientes_troya
@@ -896,8 +931,24 @@ def obtener_datos_generales():
         dias_restantes = max(dias["dias_restantes"], 0)
         promedio_diario = datos["total_ventas"] / dias_transcurridos
         datos["venta_promedio_diaria"] = round(promedio_diario, 2)
-        datos["proyeccion_ventas"] = round(datos["total_ventas"] + promedio_diario * dias_restantes, 2)
-        datos["cumplimiento_ventas_proyectado"] = (datos["proyeccion_ventas"] / datos["cuota_ventas"] * 100 if datos["cuota_ventas"] > 0 else 0)
+
+        # Proyección SAYON independiente, usando el mismo ritmo diario del mes.
+        promedio_diario_sayon = datos["ventas_sayon"] / dias_transcurridos
+        datos["proyeccion_sayon"] = round(
+            datos["ventas_sayon"] + promedio_diario_sayon * dias_restantes, 2
+        )
+
+        # Proyección ARCOR neta de SAYON.
+        datos["proyeccion_ventas"] = round(
+            datos["total_ventas"] + promedio_diario * dias_restantes, 2
+        )
+        datos["proyeccion_arcor_sin_sayon"] = round(
+            max(0, datos["proyeccion_ventas"] - datos["proyeccion_sayon"]), 2
+        )
+        datos["cumplimiento_ventas_proyectado"] = (
+            datos["proyeccion_arcor_sin_sayon"] / datos["cuota_ventas"] * 100
+            if datos["cuota_ventas"] > 0 else 0
+        )
 
         promedio_cobertura = datos["cobertura"] / dias_transcurridos
         datos["proyeccion_cobertura"] = int(round(datos["cobertura"] + promedio_cobertura * dias_restantes))
@@ -925,8 +976,16 @@ def generar_mensaje_jefe(datos):
 
     lineas_txt = ""
     for linea, ventas in sorted(datos["lineas_negocio"].items(), key=lambda x: x[1], reverse=True):
+        # MATERIAL POP deja de mostrarse en el reporte; SAYON ocupa su lugar
+        # como categoría independiente.
+        if linea.strip().upper() == "MATERIAL POP":
+            continue
         pct = ventas / datos["total_ventas"] * 100 if datos["total_ventas"] > 0 else 0
         lineas_txt += f"  • {linea}: S/. {ventas:,.0f} ({pct:.1f}%)\n"
+
+    # SAYON se presenta separado de la línea de negocio original.
+    pct_sayon = datos["ventas_sayon"] / datos["total_ventas"] * 100 if datos["total_ventas"] > 0 else 0
+    lineas_txt += f"  • SAYON: S/. {datos['ventas_sayon']:,.0f} ({pct_sayon:.1f}%)\n"
 
     return f"""📊 REPORTE ARCOR - {datos['nombre_mes']}
 {ahora_local().strftime('%d/%m/%Y %H:%M')}
@@ -955,7 +1014,8 @@ def generar_mensaje_jefe(datos):
 └─ Venta x día: S/. {datos['venta_promedio_diaria']:,.2f}
 
 🚀 PROYECCIÓN AL CIERRE:
-├─ Ventas: S/. {datos['proyeccion_ventas']:,.2f} ({datos['cumplimiento_ventas_proyectado']:.1f}%) {proyectado_ventas_emoji}
+├─ ARCOR: S/. {datos['proyeccion_arcor_sin_sayon']:,.2f} ({datos['cumplimiento_ventas_proyectado']:.1f}%) {proyectado_ventas_emoji}
+├─ SAYON: S/. {datos['proyeccion_sayon']:,.2f}
 └─ Cobertura: {datos['proyeccion_cobertura']} clientes ({cumpl_cobertura_proy:.1f}%) {cobertura_emoji}
 
 🤖 Bot N&J Distribuciones"""
