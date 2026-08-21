@@ -600,6 +600,27 @@ No hay clientes TROYA registrados.
     diferencia = total_actual - total_anterior
     pct = (diferencia / total_anterior * 100) if total_anterior > 0 else 0
 
+    # Desglose TROYA: ARCOR neto de SAYON + SAYON.
+    # SAYON se identifica por nombre de producto dentro del universo TROYA.
+    periodo_actual = f"{ahora.year}{ahora.month:02d}"
+    conn = None
+    try:
+        conn = get_db_connection()
+        row = conn.execute("""
+            SELECT COALESCE(SUM(CAST(Imp_Total AS REAL)), 0) AS sayon
+            FROM VENTAS2026
+            WHERE Proveedor = 'ARCOR'
+              AND Calif = 'D'
+              AND Periodo = ?
+              AND UPPER(COALESCE(Producto, '')) LIKE '%SAYON%'
+        """, (periodo_actual,)).fetchone()
+        sayon_actual = float(row["sayon"] or 0)
+    finally:
+        if conn:
+            conn.close()
+
+    arcor_neto = total_actual - sayon_actual
+
     # Agrupar por vendedor
     por_vendedor = {}
     for cliente in clientes:
@@ -625,16 +646,23 @@ Total {mes_nombre}: S/. {total_actual:,.0f}
 Total {mes_anterior_nombre}: S/. {total_anterior:,.0f}
 Diferencia: S/. {diferencia:+,.0f} ({pct:+.1f}%)
 
+💼 VENTAS {mes_nombre}:
+├─ ARCOR: S/. {arcor_neto:,.0f}
+└─ SAYON: S/. {sayon_actual:,.0f}
+
 📊 TOTAL: {total_clientes} | ✅ {con_compra_total} | ❌ {sin_compra_total} | 💵 S/. {ticket_promedio_general:.0f}
 
-VENDEDOR          SIN COMPRA
-──────────────────────────
+```text
+VENDEDOR                 SIN COMPRA
+───────────────────────────────────
 """
 
     for vendedor in sorted(por_vendedor.keys()):
         datos = por_vendedor[vendedor]
         nombre_corto = vendedor.split()[0] if vendedor else vendedor
-        mensaje += f"{nombre_corto:<17} {datos['sin_compra']:>2}\n"
+        mensaje += f"{nombre_corto:<24}{datos['sin_compra']:>10}\n"
+
+    mensaje += "```\n"
 
     mensaje += "\n🤖 Bot N&J Distribuciones"
 
@@ -706,6 +734,18 @@ def obtener_datos_vendedor(nombre_vendedor):
         """, (f"%{nombre_vendedor}%", periodo))
         troya_data = cursor.fetchone()
         datos["ventas_troya"] = troya_data["troya"] or 0
+
+        # Desglose TROYA individual: productos cuyo nombre contiene SAYON.
+        cursor.execute("""
+            SELECT COALESCE(ROUND(SUM(CAST(Imp_Total AS REAL)), 2), 0) AS sayon
+            FROM VENTAS2026
+            WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor = 'ARCOR'
+              AND Calif = 'D'
+              AND UPPER(COALESCE(Producto, '')) LIKE '%SAYON%'
+        """, (f"%{nombre_vendedor}%", periodo))
+        sayon_data = cursor.fetchone()
+        datos["ventas_sayon"] = sayon_data["sayon"] or 0
+        datos["ventas_arcor_neto"] = datos["ventas_troya"] - datos["ventas_sayon"]
 
         cursor.execute("""
             SELECT COUNT(DISTINCT Cod_Clie) AS clientes_troya
@@ -779,7 +819,7 @@ def generar_mensaje_vendedor(datos):
 ├─ Avance: {cumpl:.1f}% {cumplimiento_emoji}
 ├─ Cobertura: {datos['clientes']} clientes
 ├─ Ticket : S/. {datos['ticket_promedio']:,.2f}
-└─ TROYA: S/. {datos['ventas_troya']:,.2f}
+├─ ARCOR: S/. {datos['ventas_arcor_neto']:,.2f}\n├─ SAYON: S/. {datos['ventas_sayon']:,.2f}\n└─ TROYA: S/. {datos['ventas_troya']:,.2f}
 
 ⚠️ TROYA RESUMEN:
 ├─ Compraron: {datos['clientes_troya_compraron']} clientes
@@ -999,7 +1039,7 @@ def generar_mensaje_jefe(datos):
 ├─ Avance: {cumpl:.1f}% {cumplimiento_emoji}
 ├─ Cobertura: {datos['cobertura']} clientes
 ├─ Ticket: S/. {datos['ticket_promedio']:,.2f}
-└─ TROYA: S/. {datos['ventas_troya']:,.2f}
+├─ ARCOR: S/. {datos['ventas_arcor_neto']:,.2f}\n├─ SAYON: S/. {datos['ventas_sayon']:,.2f}\n└─ TROYA: S/. {datos['ventas_troya']:,.2f}
 
 📋 LÍNEAS DE NEGOCIO:
 {lineas_txt if lineas_txt else '  • Sin ventas registradas'}
