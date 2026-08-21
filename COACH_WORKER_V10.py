@@ -250,6 +250,7 @@ def productos_5_oportunidad(cur, n, p):
         WHERE Proveedor='ARCOR'
           AND Periodo=?
           AND TRIM(COALESCE(Producto,''))<>''
+          AND UPPER(TRIM(COALESCE(Producto,''))) NOT LIKE '%SAYON%'
           AND CAST(Imp_Total AS REAL)>0
         GROUP BY TRIM(Producto)
         ORDER BY SUM(CAST(Imp_Total AS REAL)) DESC
@@ -263,6 +264,7 @@ def productos_5_oportunidad(cur, n, p):
           AND Proveedor='ARCOR'
           AND Periodo=?
           AND TRIM(COALESCE(Producto,''))<>''
+          AND UPPER(TRIM(COALESCE(Producto,''))) NOT LIKE '%SAYON%'
           AND CAST(Imp_Total AS REAL)>0
         GROUP BY TRIM(Producto)
     )

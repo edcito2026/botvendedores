@@ -529,14 +529,20 @@ No tienes clientes TROYA registrados actualmente.
             venta_act = cliente.get('venta_actual', 0)
             mensaje += f"S/. {venta_act:<7.0f} {cliente_nombre}\n"
 
-    # Clientes SIN COMPRA
+    # Clientes SIN COMPRA: columna M.A. = monto comprado el mes anterior.
+    # Se usa venta_anterior, que ya viene calculado en obtener_clientes_troya().
     sin_compra_list = [c for c in clientes if not c.get('tiene_compras')]
     if sin_compra_list:
-        mensaje += f"\n❌ SIN COMPRA\n"
+        mensaje += "\n❌ SIN COMPRA\n"
+        mensaje += "```\n"
+        mensaje += f"{'CLIENTE':<24}{'DV':>4}{'M.A.':>14}\n"
+        mensaje += f"{'-' * 24}{'-' * 4}{'-' * 14}\n"
         for cliente in sin_compra_list:
-            cliente_nombre = cliente['Raz_Social'].strip().title()[:20]
-            dia = cliente.get('DV', 'N/A')
-            mensaje += f"{cliente_nombre} {dia}\n"
+            cliente_nombre = cliente['Raz_Social'].strip().title()[:24]
+            dia = str(cliente.get('DV', 'N/A'))[:4]
+            venta_anterior = float(cliente.get('venta_anterior') or 0)
+            mensaje += f"{cliente_nombre:<24}{dia:>4}S/. {venta_anterior:>9,.0f}\n"
+        mensaje += "```\n"
 
     # Resumen y comparativo contra el mes anterior.
     total_anterior = sum(float(c.get("venta_anterior") or 0) for c in clientes)
@@ -547,7 +553,6 @@ No tienes clientes TROYA registrados actualmente.
         variacion_pct = 100.0 if total_actual > 0 else 0.0
 
     mensaje += (
-        f"\n📊 Total {mes_nombre}: S/. {total_actual:,.0f}"
         f"\n📈 Comparativo TROYA"
         f"\n├─ {mes_anterior_nombre}: S/. {total_anterior:,.0f}"
         f"\n├─ {mes_nombre}: S/. {total_actual:,.0f}"
