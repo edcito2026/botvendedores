@@ -652,7 +652,7 @@ Diferencia: S/. {diferencia:+,.0f} ({pct:+.1f}%)
 
 📊 TOTAL: {total_clientes} | ✅ {con_compra_total} | ❌ {sin_compra_total} | 💵 S/. {ticket_promedio_general:.0f}
 
-```text
+```
 VENDEDOR                 SIN COMPRA
 ───────────────────────────────────
 """
