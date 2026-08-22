@@ -543,17 +543,18 @@ def obtener_datos_concurso_chenobyl(nombre_vendedor):
         def grupo(productos):
             ph = ",".join("?" for _ in productos)
             filtro_vendedor = "%" if nombre_vendedor is None else f"%{nombre_vendedor}%"
-            params = [filtro_vendedor, periodo] + [p.upper().strip() for p in productos]
+            productos_norm = [" ".join(p.upper().strip().split()) for p in productos]
+            params = [filtro_vendedor, periodo] + productos_norm
             cursor.execute(f"""
                 SELECT TRIM(Producto) producto,
                        COALESCE(SUM(CAST(Imp_Total AS REAL)),0) venta
                 FROM VENTAS2026
                 WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor='ARCOR'
-                  AND UPPER(TRIM(COALESCE(Producto,''))) IN ({ph})
+                  AND REPLACE(REPLACE(REPLACE(REPLACE(UPPER(TRIM(COALESCE(Producto,''))), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' ') IN ({ph})
                   AND CAST(Imp_Total AS REAL) > 0
                 GROUP BY UPPER(TRIM(Producto))
             """, params)
-            ventas = {str(r["producto"]).strip().upper(): float(r["venta"] or 0)
+            ventas = {" ".join(str(r["producto"]).strip().upper().split()): float(r["venta"] or 0)
                       for r in cursor.fetchall()}
 
             cursor.execute(f"""
@@ -561,12 +562,12 @@ def obtener_datos_concurso_chenobyl(nombre_vendedor):
                        COUNT(DISTINCT Cod_Clie) clientes_unicos
                 FROM VENTAS2026
                 WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor='ARCOR'
-                  AND UPPER(TRIM(COALESCE(Producto,''))) IN ({ph})
+                  AND REPLACE(REPLACE(REPLACE(REPLACE(UPPER(TRIM(COALESCE(Producto,''))), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' ') IN ({ph})
                   AND CAST(Imp_Total AS REAL) > 0
             """, params)
             r = cursor.fetchone()
 
-            detalle = [{"producto": p, "venta": ventas.get(p.upper().strip(), 0.0)}
+            detalle = [{"producto": p, "venta": ventas.get(" ".join(p.upper().strip().split()), 0.0)}
                        for p in productos]
             sin_venta = [x for x in detalle if x["venta"] <= 0]
             menor = sorted([x for x in detalle if x["venta"] > 0],
