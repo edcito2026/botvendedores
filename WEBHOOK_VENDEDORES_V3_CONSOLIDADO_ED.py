@@ -1124,6 +1124,7 @@ def obtener_datos_generales():
         """, (periodo,))
         sayon_data = cursor.fetchone()
         datos["ventas_sayon"] = float(sayon_data["ventas_sayon"] or 0)
+        datos["ventas_arcor_neto"] = round(max(0, datos["total_ventas"] - datos["ventas_sayon"]), 2)
 
         cursor.execute("""
             SELECT COUNT(DISTINCT Cod_Clie) AS clientes_troya
