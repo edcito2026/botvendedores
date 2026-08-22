@@ -492,6 +492,186 @@ def obtener_clientes_troya_generales():
 # 7. GENERADOR DE MENSAJES TROYA
 # ============================================================
 
+def obtener_datos_concurso_chenobyl(nombre_vendedor):
+    """Obtiene CHERNOBYL y TABLETAS para el concurso del mes actual."""
+    PRODUCTOS_CHERNOBYL = [
+        "MOGUL EXTREME ROCKS 12*10*45GR",
+        "MOGUL INDIVIDUAL GUSANO EXTREME 20*90GR",
+        "ROLLO MOGUL ACIDO EXTREME 12X12X35GR",
+        "MOGUL INDIVIDUAL OSO EXTREME 24*80GR PERU",
+        "MOGUL INDIVIDUAL SANDIA EXTREME 24*80GR PERU",
+        "MOGUL OSO EXTREME 12X10X55G",
+        "OSITO EXTREME 12X12X25GR",
+        "MOGUL TUBITO TUTTIFRUTTI EXTREME 30*70GR",
+        "MOGUL JELLY BEAN EXTREME 12X10X50GR",
+        "MOGUL CONFITADO EXTREME 12*16*30GR",
+        "MOGUL CONFITADO INDIVID EXTREME 40*70GR",
+        "MOGUL TUBITO EXTREME FRUTILLA 30*70GR",
+        "ROLLO MOGUL ACIDO EXT 12X12X35GR",
+        "ROLLO MOGUL FRUTALES 12*12*35GR PERU",
+        "ROLLO MOGUL RED BERRIES 12X12X35GR",
+        "MOGUL LENGUA MAXX EXTREME TUTI 6*24*15",
+        "MOGUL OSITO EXTREME 25GR - GRANEL",
+        "MOGUL SANDIA EXTREME 12*10*50GR",
+    ]
+    PRODUCTOS_TABLETAS = [
+        "NIKOLO CAFE **NUEVO*** 10DSP*12UU* 29GR",
+        "NIKOLO PEQUEÑO 10DSP*300GR",
+        "NIKOLO XL  CHOCOLATE 12D*516GR*12UU",
+        "NIKOLO PEQUEÑO MENTA 10DSP*276GR",
+        "NIKOLO PEQUEÑO FRESA 10DSP*12UU* 29GR",
+        "TABLETA GALLETA BOB 6DSP*41GR*18UU",
+        "PRIVILEGIO TABLETA MANJAR 10*348GR",
+    ]
+    PRODUCTOS_GALLETAS = [
+        "GALLETA BOB VAINILLA 14X216GR",
+        "GALLETA BOB CHOCOLATE 14X216GR",
+        "GALLETA SAPITO FRESA 14X216GR",
+        "GALLETA SAPITO VAINILLA 14X216GR",
+        "GALLETA BOB PACK X 6UU CHOCO 20*24GR",
+        "GALLETA TORTINI BON O BON 65*90GR",
+        "GALLETA BOB PACK X 6UU VAINILLA 20*24GR",
+    ]
+
+    conn = None
+    try:
+        ctx = obtener_contexto_periodo()
+        periodo = ctx["periodo"]
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        def grupo(productos):
+            ph = ",".join("?" for _ in productos)
+            params = [f"%{nombre_vendedor}%", periodo] + [p.upper().strip() for p in productos]
+            cursor.execute(f"""
+                SELECT TRIM(Producto) producto,
+                       COALESCE(SUM(CAST(Imp_Total AS REAL)),0) venta
+                FROM VENTAS2026
+                WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor='ARCOR'
+                  AND UPPER(TRIM(COALESCE(Producto,''))) IN ({ph})
+                  AND CAST(Imp_Total AS REAL) > 0
+                GROUP BY UPPER(TRIM(Producto))
+            """, params)
+            ventas = {str(r["producto"]).strip().upper(): float(r["venta"] or 0)
+                      for r in cursor.fetchall()}
+
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(CAST(Imp_Total AS REAL)),0) venta_total,
+                       COUNT(DISTINCT Cod_Clie) clientes_unicos
+                FROM VENTAS2026
+                WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor='ARCOR'
+                  AND UPPER(TRIM(COALESCE(Producto,''))) IN ({ph})
+                  AND CAST(Imp_Total AS REAL) > 0
+            """, params)
+            r = cursor.fetchone()
+
+            detalle = [{"producto": p, "venta": ventas.get(p.upper().strip(), 0.0)}
+                       for p in productos]
+            sin_venta = [x for x in detalle if x["venta"] <= 0]
+            menor = sorted([x for x in detalle if x["venta"] > 0],
+                           key=lambda x: x["venta"])[:3]
+            return {
+                "venta": float(r["venta_total"] or 0),
+                "clientes": int(r["clientes_unicos"] or 0),
+                "sin_venta": sin_venta,
+                "menor": menor,
+            }
+
+        ch = grupo(PRODUCTOS_CHERNOBYL)
+        tb = grupo(PRODUCTOS_TABLETAS)
+        ga = grupo(PRODUCTOS_GALLETAS)
+
+        return {
+            "periodo": periodo,
+            "nombre_mes": ctx["nombre_mes"],
+            "venta_total": ch["venta"],
+            "clientes_unicos": ch["clientes"],
+            "productos_sin_venta": ch["sin_venta"],
+            "productos_menor_venta": ch["menor"],
+            "venta_total_tabletas": tb["venta"],
+            "clientes_unicos_tabletas": tb["clientes"],
+            "tabletas_sin_venta": tb["sin_venta"],
+            "tabletas_menor_venta": tb["menor"],
+            "venta_total_galletas": ga["venta"],
+            "clientes_unicos_galletas": ga["clientes"],
+            "galletas_sin_venta": ga["sin_venta"],
+            "galletas_menor_venta": ga["menor"],
+        }
+    except Exception as e:
+        logger.exception(f"❌ Error obteniendo CONCURSO para {nombre_vendedor}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
+def generar_mensaje_concurso_chenobyl(datos):
+    if not datos:
+        return "⚠️ No se pudo obtener la información del concurso."
+
+    mensaje = f"""🏆 CONCURSO {datos['nombre_mes'].upper()} {datos['periodo'][:4]}
+
+━━━━━━━━━━━━━━━━━━━━
+☢️ CHERNOBYL
+━━━━━━━━━━━━━━━━━━━━
+
+💰 VENTAS: S/. {datos['venta_total']:,.2f}
+👥 COBERTURA: {datos['clientes_unicos']} clientes únicos
+
+"""
+
+    sin_venta = datos.get("productos_sin_venta", [])
+    menor = datos.get("productos_menor_venta", [])
+    if sin_venta:
+        mensaje += "❌ SIN VENTA:\n" + "".join(f"• {x['producto']}\n" for x in sin_venta)
+    if menor:
+        mensaje += "\n⚠️ 3 CON MENOR VENTA:\n" + "".join(
+            f"• {x['producto']}\n" for x in menor
+        )
+
+    mensaje += f"""
+━━━━━━━━━━━━━━━━━━━━
+🍫 TABLETAS
+━━━━━━━━━━━━━━━━━━━━
+
+💰 VENTAS: S/. {datos['venta_total_tabletas']:,.2f}
+👥 COBERTURA: {datos['clientes_unicos_tabletas']} clientes únicos
+
+"""
+    sin_venta = datos.get("tabletas_sin_venta", [])
+    menor = datos.get("tabletas_menor_venta", [])
+    if sin_venta:
+        mensaje += "❌ SIN VENTA:\n" + "".join(f"• {x['producto']}\n" for x in sin_venta)
+    if menor:
+        mensaje += "\n⚠️ 3 CON MENOR VENTA:\n" + "".join(
+            f"• {x['producto']}\n" for x in menor
+        )
+
+    mensaje += f"""
+━━━━━━━━━━━━━━━━━━━━
+🍪 GALLETAS
+━━━━━━━━━━━━━━━━━━━━
+
+💰 VENTAS: S/. {datos['venta_total_galletas']:,.2f}
+👥 COBERTURA: {datos['clientes_unicos_galletas']} clientes únicos
+
+"""
+    sin_venta = datos.get("galletas_sin_venta", [])
+    menor = datos.get("galletas_menor_venta", [])
+
+    if sin_venta:
+        mensaje += "❌ SIN VENTA:\n" + "".join(
+            f"• {x['producto']}\n" for x in sin_venta
+        )
+
+    if menor:
+        mensaje += "\n⚠️ 3 CON MENOR VENTA:\n" + "".join(
+            f"• {x['producto']}\n" for x in menor
+        )
+
+    mensaje += "\n━━━━━━━━━━━━━━━━━━━━\n🚀 ¡A seguir impulsando el concurso! 💪🔥\n\n🤖 Bot N&J"
+    return mensaje
+
 def generar_mensaje_troya(vendedor, clientes):
     """Genera reporte personalizado de clientes TROYA (formato compacto)"""
 
@@ -529,20 +709,14 @@ No tienes clientes TROYA registrados actualmente.
             venta_act = cliente.get('venta_actual', 0)
             mensaje += f"S/. {venta_act:<7.0f} {cliente_nombre}\n"
 
-    # Clientes SIN COMPRA: columna M.A. = monto comprado el mes anterior.
-    # Se usa venta_anterior, que ya viene calculado en obtener_clientes_troya().
+    # Clientes SIN COMPRA
     sin_compra_list = [c for c in clientes if not c.get('tiene_compras')]
     if sin_compra_list:
-        mensaje += "\n❌ SIN COMPRA\n"
-        mensaje += "```\n"
-        mensaje += f"{'CLIENTE':<24}{'DV':>4}{'M.A.':>14}\n"
-        mensaje += f"{'-' * 24}{'-' * 4}{'-' * 14}\n"
+        mensaje += f"\n❌ SIN COMPRA\n"
         for cliente in sin_compra_list:
-            cliente_nombre = cliente['Raz_Social'].strip().title()[:24]
-            dia = str(cliente.get('DV', 'N/A'))[:4]
-            venta_anterior = float(cliente.get('venta_anterior') or 0)
-            mensaje += f"{cliente_nombre:<24}{dia:>4}S/. {venta_anterior:>9,.0f}\n"
-        mensaje += "```\n"
+            cliente_nombre = cliente['Raz_Social'].strip().title()[:20]
+            dia = cliente.get('DV', 'N/A')
+            mensaje += f"{cliente_nombre} {dia}\n"
 
     # Resumen y comparativo contra el mes anterior.
     total_anterior = sum(float(c.get("venta_anterior") or 0) for c in clientes)
@@ -553,6 +727,7 @@ No tienes clientes TROYA registrados actualmente.
         variacion_pct = 100.0 if total_actual > 0 else 0.0
 
     mensaje += (
+        f"\n📊 Total {mes_nombre}: S/. {total_actual:,.0f}"
         f"\n📈 Comparativo TROYA"
         f"\n├─ {mes_anterior_nombre}: S/. {total_anterior:,.0f}"
         f"\n├─ {mes_nombre}: S/. {total_actual:,.0f}"
@@ -1138,7 +1313,11 @@ def recibir_mensaje():
             return jsonify({"status": "ok"}), 200
         texto_mensaje = (mensaje_obj.get("text", {}).get("body", "").strip()).upper()
         logger.info(f"📨 Mensaje de *{numero_remitente[-4:]}: {texto_mensaje[:50]}")
-        palabra_detectada = "RESUMEN" if "RESUMEN" in texto_mensaje else ("TROYA" if "TROYA" in texto_mensaje else None)
+        palabra_detectada = (
+            "CONCURSO" if "CONCURSO" in texto_mensaje
+            else ("RESUMEN" if "RESUMEN" in texto_mensaje
+                  else ("TROYA" if "TROYA" in texto_mensaje else None))
+        )
         if not palabra_detectada:
             logger.info("⊘ Sin palabra clave")
             return jsonify({"status": "ok"}), 200
@@ -1168,6 +1347,15 @@ def procesar_mensaje_en_segundo_plano(job):
             return
         nombre_usuario = datos_usuario["nombre"]
         rol = datos_usuario.get("rol", "")
+        if palabra_detectada == "CONCURSO":
+            logger.info(f"☢️ Vendedor solicita CHERNOBYL: {nombre_usuario}")
+            datos_concurso = obtener_datos_concurso_chenobyl(nombre_usuario)
+            mensaje = generar_mensaje_concurso_chenobyl(datos_concurso)
+            if enviar_mensaje_whatsapp(numero_remitente, mensaje):
+                logger.info(f"✅ Reporte CHERNOBYL enviado a {nombre_usuario} (message_id={message_id})")
+            else:
+                logger.error(f"❌ Error enviando CHERNOBYL a {nombre_usuario}; message_id conservado: {message_id}")
+            return
         if palabra_detectada == "TROYA":
             if es_jefe(rol):
                 logger.info(f"👔 Jefe/Supervisor solicita TROYA: {nombre_usuario}")
@@ -1214,7 +1402,7 @@ def status():
         "webhook": "/webhook",
         "version": "V4 ANTI-DUPLICADOS - WORKER",
         "periodo": ctx["periodo"],
-        "palabras_clave": ["RESUMEN", "TROYA"],
+        "palabras_clave": ["RESUMEN", "TROYA", "CONCURSO"],
     }), 200
 
 # ============================================================
@@ -1231,7 +1419,7 @@ if __name__ == "__main__":
     logger.info(f"Días laborables: {dias}")
     logger.info(f"BD: {BD_PATH}")
     logger.info(f"Excel: {EXCEL_VENDEDORES}")
-    logger.info("Palabras clave: RESUMEN | TROYA")
+    logger.info("Palabras clave: RESUMEN | TROYA | CONCURSO")
     logger.info("QUERIES TROYA: CAST AS REAL | Cdg_Vend | ARCOR | WORKER ÚNICO")
     logger.info("=" * 70)
 
