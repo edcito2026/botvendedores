@@ -199,3 +199,38 @@ sqlite3.IntegrityError: UNIQUE constraint failed: VENTAS2026.ID
 [2026-08-21 22:44:49] cuotas: 312
 [2026-08-21 22:44:49] TIEMPO: 17.98 segundos
 [2026-08-21 22:44:49] ============================================================
+[2026-08-22 10:25:38] ============================================================
+[2026-08-22 10:25:38] 🤖 INICIANDO ROBOT - EXTRACTOR OPTIMIZADO
+[2026-08-22 10:25:38] ============================================================
+[2026-08-22 10:25:38] BD fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db (5629.41 MB)
+[2026-08-22 10:25:38] Respaldando BD anterior...
+[2026-08-22 10:25:40] Creando tabla VENTAS2026...
+[2026-08-22 10:25:41] Creando tabla rechazos...
+[2026-08-22 10:25:41] Creando tabla clientes...
+[2026-08-22 10:25:42] Creando tabla cuotas...
+[2026-08-22 10:25:42] Extrayendo VENTAS2026 (Proveedor = ARCOR)...
+[2026-08-22 10:25:43] Total de registros a copiar: 131399
+[2026-08-22 10:25:44] ✓ 131399 registros de VENTAS2026 copiados (Periodo normalizado)
+[2026-08-22 10:25:44] Extrayendo tabla rechazos...
+[2026-08-22 10:25:45] Total de rechazos a copiar: 142015
+[2026-08-22 10:25:45] ✓ 142015 registros de rechazos copiados
+[2026-08-22 10:25:45] Extrayendo tabla clientes...
+[2026-08-22 10:25:45] Total de clientes: 7954
+[2026-08-22 10:25:45] ✓ 7954 registros de clientes copiados
+[2026-08-22 10:25:45] Extrayendo cuotas ARCOR...
+[2026-08-22 10:25:45] Total de cuotas a copiar: 312
+[2026-08-22 10:25:45] ✓ 312 registros de cuotas ARCOR copiados
+[2026-08-22 10:25:45] Creando índices para optimización...
+[2026-08-22 10:26:06] ============================================================
+[2026-08-22 10:26:06] ✅ EXTRACCIÓN COMPLETADA EXITOSAMENTE
+[2026-08-22 10:26:06] ============================================================
+[2026-08-22 10:26:06] BD Fuente: E:\PRUEBASEXTRACTOR\EXTRACTOR.db
+[2026-08-22 10:26:06] Tamaño: 5629.41 MB
+[2026-08-22 10:26:06] BD Destino: E:\PRUEBASEXTRACTOR\Automatizacion\WhatsApp\botvendedores\ventas.db
+[2026-08-22 10:26:06] Tamaño: 120.86 MB
+[2026-08-22 10:26:06] VENTAS2026: 131,399
+[2026-08-22 10:26:06] rechazos: 142,015
+[2026-08-22 10:26:06] clientes: 7,954
+[2026-08-22 10:26:06] cuotas: 312
+[2026-08-22 10:26:06] TIEMPO: 27.71 segundos
+[2026-08-22 10:26:06] ============================================================

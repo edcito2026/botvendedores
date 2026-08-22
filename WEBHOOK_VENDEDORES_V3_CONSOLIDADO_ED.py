@@ -529,7 +529,6 @@ def obtener_datos_concurso_chenobyl(nombre_vendedor):
         "GALLETA SAPITO FRESA 14X216GR",
         "GALLETA SAPITO VAINILLA 14X216GR",
         "GALLETA BOB PACK X 6UU CHOCO 20*24GR",
-        "GALLETA TORTINI BON O BON 65*90GR",
         "GALLETA BOB PACK X 6UU VAINILLA 20*24GR",
     ]
 
@@ -563,7 +562,6 @@ def obtener_datos_concurso_chenobyl(nombre_vendedor):
                 FROM VENTAS2026
                 WHERE Vendedor LIKE ? AND Periodo = ? AND Proveedor='ARCOR'
                   AND REPLACE(REPLACE(REPLACE(REPLACE(UPPER(TRIM(COALESCE(Producto,''))), '  ', ' '), '  ', ' '), '  ', ' '), '  ', ' ') IN ({ph})
-                  AND CAST(Imp_Total AS REAL) > 0
             """, params)
             r = cursor.fetchone()
 

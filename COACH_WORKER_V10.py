@@ -220,6 +220,89 @@ def clientes_recuperacion(cur,n,p,didx):
     return [dict(r) for r in cur.execute(q,(n,p,n,prev,n,dv)).fetchall()]
 
 
+
+def rechazos_resumen(cur, n, c):
+    """
+    Resumen de rechazos de la semana calendario anterior.
+    La lista muestra solo clientes de la cartera que se visitan hoy
+    y que tuvieron rechazo durante la semana anterior.
+    """
+    try:
+        existe = cur.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)='rechazos' LIMIT 1"
+        ).fetchone()
+        if not existe:
+            logger.warning("⚠️ Tabla rechazos no disponible en la BD.")
+            return {'importe': 0.0, 'clientes': 0, 'perdida_pct': 0.0, 'clientes_rechazo': []}
+
+        hoy = c['hoy']
+        lunes_actual = hoy - timedelta(days=hoy.weekday())
+        lunes_anterior = lunes_actual - timedelta(days=7)
+        f_ini = lunes_anterior.isoformat()
+        f_fin = lunes_actual.isoformat()
+
+        r = cur.execute("""
+            SELECT COALESCE(SUM(ABS(CAST(Imp_Dev AS REAL))),0) AS importe,
+                   COUNT(DISTINCT TRIM(Cliente)) AS clientes
+            FROM rechazos
+            WHERE TRIM(Vendedor)=?
+              AND date(F_Emis)>=date(?) AND date(F_Emis)<date(?)
+              AND ABS(CAST(COALESCE(Imp_Dev,0) AS REAL))>0
+        """, (n, f_ini, f_fin)).fetchone()
+
+        importe = float(r['importe'] or 0)
+        clientes = int(r['clientes'] or 0)
+
+        rv = cur.execute("""
+            SELECT COALESCE(SUM(CAST(Imp_Total AS REAL)),0) AS venta
+            FROM VENTAS2026
+            WHERE Vendedor=? AND Proveedor='ARCOR'
+              AND date(F_Emis)>=date(?) AND date(F_Emis)<date(?)
+              AND CAST(Imp_Total AS REAL)>0
+        """, (n, f_ini, f_fin)).fetchone()
+
+        venta_semana = float(rv['venta'] or 0)
+        perdida_pct = (
+            importe / (venta_semana + importe) * 100
+            if (venta_semana + importe) > 0 else 0.0
+        )
+
+        clientes_rechazo = []
+        if hoy.weekday() <= 5:
+            dv = hoy.weekday() + 1
+            rows = cur.execute("""
+                SELECT c.Raz_Social AS cliente,
+                       COALESCE(SUM(ABS(CAST(r.Imp_Dev AS REAL))),0) AS importe_rechazo
+                FROM clientes c
+                JOIN rechazos r
+                  ON UPPER(TRIM(c.Raz_Social)) = UPPER(TRIM(r.Cliente))
+                WHERE c.Vendedor=?
+                  AND CAST(c.DV AS INTEGER)=?
+                  AND TRIM(r.Vendedor)=?
+                  AND date(r.F_Emis)>=date(?) AND date(r.F_Emis)<date(?)
+                  AND ABS(CAST(COALESCE(r.Imp_Dev,0) AS REAL))>0
+                GROUP BY c.Cod_Clie, c.Raz_Social
+                ORDER BY importe_rechazo DESC, c.Raz_Social
+            """, (n, dv, n, f_ini, f_fin)).fetchall()
+
+            clientes_rechazo = [
+                {'cliente': str(row['cliente'] or '').strip(),
+                 'importe': float(row['importe_rechazo'] or 0)}
+                for row in rows
+            ]
+
+        return {
+            'importe': importe,
+            'clientes': clientes,
+            'perdida_pct': perdida_pct,
+            'clientes_rechazo': clientes_rechazo
+        }
+
+    except Exception as e:
+        logger.exception("❌ Error procesando rechazos para %s: %s", n, e)
+        return {'importe': 0.0, 'clientes': 0, 'perdida_pct': 0.0, 'clientes_rechazo': []}
+
+
 def promociones_3_menor_venta(cur, n, p, pa):
     """3 promociones con menor venta del vendedor en el período actual."""
     q = """
@@ -297,6 +380,8 @@ def analizar(cur,n,c):
         pesos_plan=[max(p.get(x.weekday(),0),1e-9) for x in plan]
         cobh=int(round(cobpend*pesos_plan[0]/sum(pesos_plan)))
 
+    rech=rechazos_resumen(cur,n,c)
+
     return {
         'vendedor':n,
         'cuota':q,
@@ -311,7 +396,8 @@ def analizar(cur,n,c):
         'troya':troya(cur,n,c['periodo'],c['hoy'].weekday()) if laborable(c['hoy']) else [],
         'recuperacion':clientes_recuperacion(cur,n,c['periodo'],c['hoy'].weekday()) if laborable(c['hoy']) else [],
         'promos':promociones_3_menor_venta(cur,n,c['periodo'],periodo_ant(c)),
-        'productos':productos_5_oportunidad(cur,n,c['periodo'])
+        'productos':productos_5_oportunidad(cur,n,c['periodo']),
+        'rechazos':rech
     }
 
 
@@ -363,7 +449,7 @@ def msg(a,c):
     saludo, estado, brecha_pp = saludo_adaptativo(a,c)
 
     if a['saldo']<=0:
-        return f"""{saludo}
+        s=f"""{saludo}
 
 📊 Cuota: S/. {a['cuota']:,.2f}
 💰 Vendido: S/. {a['venta']:,.2f}
@@ -373,9 +459,18 @@ def msg(a,c):
 
 💵 Ticket: S/. {a['ticket']:,.2f}
 
-🎯 Hoy: mantén el ritmo, protege el ticket y aprovecha las oportunidades TROYA.
-
-🤖 Coach Comercial N&J"""
+🎯 Hoy: mantén el ritmo, protege el ticket y aprovecha las oportunidades TROYA."""
+        rj=a.get('rechazos',{})
+        if rj.get('importe',0)>0 or rj.get('clientes',0)>0:
+            s+="\n━━━━━━━━━━━━━━━━━━━━\n⚠️ OBSERVACIÓN\n"
+            s+=f"❌ Rechazos: S/. {rj.get('importe',0):,.2f}\n"
+            s+=f"👥 Clientes afectados: {rj.get('clientes',0)}\n"
+            s+=f"📉 Pérdida: {rj.get('perdida_pct',0):.1f}%\n"
+            if rj.get('clientes_rechazo'):
+                s+="\n🔄 CLIENTES QUE RECHAZARON\n"
+                for r in rj['clientes_rechazo']:
+                    s+=f"• {r['cliente'][:45]} — S/. {r['importe']:,.2f}\n"
+        return s+"\n🤖 Coach Comercial N&J"
 
     s=f"""{saludo}
 
@@ -439,6 +534,17 @@ Actual: S/. {a['ticket']:,.2f}
     s+=f"{prioridad_num}️⃣ Trabajar los 5 productos con menor venta\n"
     prioridad_num+=1
     s+=f"{prioridad_num}️⃣ Aumentar el ticket de S/. {a['ticket']:,.2f}\n"
+    rj=a.get('rechazos',{})
+    if rj.get('importe',0)>0 or rj.get('clientes',0)>0:
+        s+="\n━━━━━━━━━━━━━━━━━━━━\n⚠️ OBSERVACIÓN\n"
+        s+=f"❌ Rechazos: S/. {rj.get('importe',0):,.2f}\n"
+        s+=f"👥 Clientes afectados: {rj.get('clientes',0)}\n"
+        s+=f"📉 Pérdida: {rj.get('perdida_pct',0):.1f}%\n"
+        if rj.get('clientes_rechazo'):
+            s+="\n🔄 CLIENTES QUE RECHAZARON\n"
+            for r in rj['clientes_rechazo']:
+                s+=f"• {r['cliente'][:45]} — S/. {r['importe']:,.2f}\n"
+
     s+="\n🤖 Coach Comercial N&J"
     return s
 
