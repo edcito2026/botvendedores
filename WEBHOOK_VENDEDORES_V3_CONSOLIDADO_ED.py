@@ -609,67 +609,43 @@ def generar_mensaje_concurso_chenobyl(datos):
     if not datos:
         return "⚠️ No se pudo obtener la información del concurso."
 
-    mensaje = f"""🏆 CONCURSO {datos['nombre_mes'].upper()} {datos['periodo'][:4]}
+    mes_ano = f"{datos['nombre_mes'].upper()} {datos['periodo'][:4]}"
 
-━━━━━━━━━━━━━━━━━━━━
-☢️ CHERNOBYL
-━━━━━━━━━━━━━━━━━━━━
+    def bloque_categoria(icono, nombre, venta, clientes, menor, sin_venta):
+        msg = f"\\n{icono} {nombre}  S/. {venta:,.2f}  {clientes} clientes\\n"
+        if menor:
+            msg += "\\n⚠️ 3 CON MENOR VENTA:\\n"
+            msg += "".join(f"· {x['producto']}\\n" for x in menor)
+        if sin_venta:
+            msg += "\\n❌ SIN VENTA:\\n"
+            msg += "".join(f"· {x['producto']}\\n" for x in sin_venta)
+        return msg
 
-💰 VENTAS: S/. {datos['venta_total']:,.2f}
-👥 COBERTURA: {datos['clientes_unicos']} clientes únicos
+    mensaje = f"🏆 CONCURSO {mes_ano}\\n"
+    mensaje += "────────────────────────\\n"
 
-"""
+    mensaje += bloque_categoria(
+        "☢️", "CHERNOBYL",
+        datos["venta_total"], datos["clientes_unicos"],
+        datos.get("productos_menor_venta", []),
+        datos.get("productos_sin_venta", []),
+    )
 
-    sin_venta = datos.get("productos_sin_venta", [])
-    menor = datos.get("productos_menor_venta", [])
-    if sin_venta:
-        mensaje += "❌ SIN VENTA:\n" + "".join(f"• {x['producto']}\n" for x in sin_venta)
-    if menor:
-        mensaje += "\n⚠️ 3 CON MENOR VENTA:\n" + "".join(
-            f"• {x['producto']}\n" for x in menor
-        )
+    mensaje += bloque_categoria(
+        "🍫", "TABLETAS",
+        datos["venta_total_tabletas"], datos["clientes_unicos_tabletas"],
+        datos.get("tabletas_menor_venta", []),
+        datos.get("tabletas_sin_venta", []),
+    )
 
-    mensaje += f"""
-━━━━━━━━━━━━━━━━━━━━
-🍫 TABLETAS
-━━━━━━━━━━━━━━━━━━━━
+    mensaje += bloque_categoria(
+        "🍪", "GALLETAS",
+        datos["venta_total_galletas"], datos["clientes_unicos_galletas"],
+        datos.get("galletas_menor_venta", []),
+        datos.get("galletas_sin_venta", []),
+    )
 
-💰 VENTAS: S/. {datos['venta_total_tabletas']:,.2f}
-👥 COBERTURA: {datos['clientes_unicos_tabletas']} clientes únicos
-
-"""
-    sin_venta = datos.get("tabletas_sin_venta", [])
-    menor = datos.get("tabletas_menor_venta", [])
-    if sin_venta:
-        mensaje += "❌ SIN VENTA:\n" + "".join(f"• {x['producto']}\n" for x in sin_venta)
-    if menor:
-        mensaje += "\n⚠️ 3 CON MENOR VENTA:\n" + "".join(
-            f"• {x['producto']}\n" for x in menor
-        )
-
-    mensaje += f"""
-━━━━━━━━━━━━━━━━━━━━
-🍪 GALLETAS
-━━━━━━━━━━━━━━━━━━━━
-
-💰 VENTAS: S/. {datos['venta_total_galletas']:,.2f}
-👥 COBERTURA: {datos['clientes_unicos_galletas']} clientes únicos
-
-"""
-    sin_venta = datos.get("galletas_sin_venta", [])
-    menor = datos.get("galletas_menor_venta", [])
-
-    if sin_venta:
-        mensaje += "❌ SIN VENTA:\n" + "".join(
-            f"• {x['producto']}\n" for x in sin_venta
-        )
-
-    if menor:
-        mensaje += "\n⚠️ 3 CON MENOR VENTA:\n" + "".join(
-            f"• {x['producto']}\n" for x in menor
-        )
-
-    mensaje += "\n━━━━━━━━━━━━━━━━━━━━\n🚀 ¡A seguir impulsando el concurso! 💪🔥\n\n🤖 Bot N&J"
+    mensaje += "\\n🤖 Bot N&J"
     return mensaje
 
 def generar_mensaje_troya(vendedor, clientes):
@@ -846,6 +822,169 @@ VENDEDOR                 SIN COMPRA
 
     mensaje += "\n🤖 Bot N&J Distribuciones"
 
+    return mensaje
+
+# ============================================================
+# 8. PROMOCIONES
+# ============================================================
+
+def obtener_promociones_vendedor(nombre_vendedor):
+    """Obtiene promociones del mes actual por vendedor.
+    Una promoción vendida se cuenta por Documento DISTINCT, no por filas,
+    porque una promoción puede estar formada por varias líneas de productos.
+    """
+    conn = None
+    try:
+        ctx = obtener_contexto_periodo()
+        periodo = ctx["periodo"]
+        conn = get_db_connection()
+        filas = conn.execute("""
+            SELECT TRIM(Promo) AS promocion,
+                   COUNT(DISTINCT Documento) AS cantidad
+            FROM VENTAS2026
+            WHERE Vendedor LIKE ?
+              AND Periodo = ?
+              AND TRIM(COALESCE(Promo, '')) <> ''
+              AND TRIM(COALESCE(Documento, '')) <> ''
+            GROUP BY TRIM(Promo)
+            ORDER BY cantidad DESC, promocion ASC
+        """, (f"%{nombre_vendedor}%", periodo)).fetchall()
+        return [{"promocion": r["promocion"], "cantidad": int(r["cantidad"] or 0)} for r in filas]
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo promociones de {nombre_vendedor}: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def obtener_promociones_equipo():
+    """Obtiene promociones utilizadas por el equipo en el mes actual."""
+    conn = None
+    try:
+        ctx = obtener_contexto_periodo()
+        periodo = ctx["periodo"]
+        conn = get_db_connection()
+        filas = conn.execute("""
+            SELECT TRIM(Promo) AS promocion,
+                   COUNT(DISTINCT Documento) AS cantidad,
+                   COUNT(DISTINCT Vendedor) AS vendedores
+            FROM VENTAS2026
+            WHERE Periodo = ?
+              AND TRIM(COALESCE(Promo, '')) <> ''
+              AND TRIM(COALESCE(Documento, '')) <> ''
+            GROUP BY TRIM(Promo)
+            ORDER BY cantidad DESC, promocion ASC
+        """, (periodo,)).fetchall()
+        return [{
+            "promocion": r["promocion"],
+            "cantidad": int(r["cantidad"] or 0),
+            "vendedores": int(r["vendedores"] or 0)
+        } for r in filas]
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo promociones del equipo: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def generar_mensaje_promociones_vendedor(nombre_vendedor, promociones_vendedor, promociones_equipo):
+    ahora = ahora_local()
+    mes_nombre = MESES_ES[ahora.month - 1]
+    nombre = (nombre_vendedor or "Vendedor").strip().title()
+
+    vendidas = [p for p in promociones_vendedor if p["cantidad"] > 0]
+    vendidas_set = {p["promocion"].strip().upper() for p in vendidas}
+    oportunidades = [
+        p for p in promociones_equipo
+        if p["promocion"].strip().upper() not in vendidas_set and p["cantidad"] > 0
+    ]
+
+    total = sum(p["cantidad"] for p in vendidas)
+    mensaje = f"🎯 PROMOS {mes_nombre} {ahora.year}\n\n━━━━━━━━━━━━━━━━━━━━\n🔥 VENDISTE\n━━━━━━━━━━━━━━━━━━━━\n"
+
+    if vendidas:
+        for p in vendidas:
+            mensaje += f"• {p['promocion']} → 📦 {p['cantidad']}\n"
+    else:
+        mensaje += "• Aún no registras promociones vendidas\n"
+
+    mensaje += f"\n📦 TOTAL: {total} promociones\n"
+    mensaje += "\n━━━━━━━━━━━━━━━━━━━━\n⚠️ OPORTUNIDADES\n━━━━━━━━━━━━━━━━━━━━\n"
+
+    if oportunidades:
+        for p in oportunidades:
+            mensaje += f"• {p['promocion']}\n"
+    else:
+        mensaje += "• No tienes promociones pendientes por impulsar.\n"
+
+    mensaje += "\n💪 ¡Impulsa las promociones que aún no has vendido!\n\n🤖 Bot N&J"
+    return mensaje
+
+
+def obtener_actividad_promos_vendedores():
+    """Obtiene promociones vendidas por cada vendedor del mes actual.
+    Una promoción se cuenta por Documento DISTINCT.
+    """
+    conn = None
+    try:
+        ctx = obtener_contexto_periodo()
+        periodo = ctx["periodo"]
+        conn = get_db_connection()
+        filas = conn.execute("""
+            SELECT TRIM(Vendedor) AS vendedor,
+                   COUNT(DISTINCT Documento) AS cantidad
+            FROM VENTAS2026
+            WHERE Periodo = ?
+              AND TRIM(COALESCE(Promo, '')) <> ''
+              AND TRIM(COALESCE(Documento, '')) <> ''
+              AND TRIM(COALESCE(Vendedor, '')) <> ''
+            GROUP BY TRIM(Vendedor)
+            ORDER BY cantidad ASC, vendedor ASC
+        """, (periodo,)).fetchall()
+        return [{
+            "vendedor": r["vendedor"],
+            "cantidad": int(r["cantidad"] or 0)
+        } for r in filas]
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo actividad de promociones por vendedor: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def generar_mensaje_promociones_jefe(promociones_equipo):
+    ahora = ahora_local()
+    mes_nombre = MESES_ES[ahora.month - 1]
+    total = sum(p["cantidad"] for p in promociones_equipo)
+    actividad = obtener_actividad_promos_vendedores()
+
+    mensaje = f"🎯 PROMOS {mes_nombre} {ahora.year}\n\n━━━━━━━━━━━━━━━━━━━━\n👔 RESULTADO FUERZA DE VENTAS\n━━━━━━━━━━━━━━━━━━━━\n\n🏆 5 PROMOS MÁS VENDIDAS\n"
+    if promociones_equipo:
+        for i, p in enumerate(promociones_equipo[:5], 1):
+            mensaje += f"{i}️⃣ {p['promocion']} → 📦 {p['cantidad']}\n"
+    else:
+        mensaje += "• Sin promociones registradas\n"
+
+    mensaje += "\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 5 PROMOS MENOS VENDIDAS\n"
+    if promociones_equipo:
+        menos = sorted(promociones_equipo, key=lambda x: (x["cantidad"], x["promocion"]))[:5]
+        for p in menos:
+            mensaje += f"• {p['promocion']} → 📦 {p['cantidad']}\n"
+    else:
+        mensaje += "• Sin promociones registradas\n"
+
+    mensaje += "\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 5 VENDEDORES CON MENOR ACTIVIDAD\n"
+    if actividad:
+        for i, v in enumerate(actividad[:5], 1):
+            nombre = (v["vendedor"] or "Vendedor").strip().title()
+            mensaje += f"{i}️⃣ {nombre} → 📦 {v['cantidad']} promos\n"
+    else:
+        mensaje += "• Sin actividad registrada\n"
+
+    mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n📦 TOTAL PROMOS: {total}\n\n🤖 Bot N&J"
     return mensaje
 
 # ============================================================
@@ -1315,9 +1454,10 @@ def recibir_mensaje():
         texto_mensaje = (mensaje_obj.get("text", {}).get("body", "").strip()).upper()
         logger.info(f"📨 Mensaje de *{numero_remitente[-4:]}: {texto_mensaje[:50]}")
         palabra_detectada = (
-            "CONCURSO" if "CONCURSO" in texto_mensaje
-            else ("RESUMEN" if "RESUMEN" in texto_mensaje
-                  else ("TROYA" if "TROYA" in texto_mensaje else None))
+            "PROMOS" if "PROMOS" in texto_mensaje
+            else ("CONCURSO" if "CONCURSO" in texto_mensaje
+                  else ("RESUMEN" if "RESUMEN" in texto_mensaje
+                        else ("TROYA" if "TROYA" in texto_mensaje else None)))
         )
         if not palabra_detectada:
             logger.info("⊘ Sin palabra clave")
@@ -1348,6 +1488,23 @@ def procesar_mensaje_en_segundo_plano(job):
             return
         nombre_usuario = datos_usuario["nombre"]
         rol = datos_usuario.get("rol", "")
+        if palabra_detectada == "PROMOS":
+            if es_jefe(rol):
+                logger.info(f"👔 Jefe/Supervisor solicita PROMOCIONES: {nombre_usuario}")
+                promociones_equipo = obtener_promociones_equipo()
+                mensaje = generar_mensaje_promociones_jefe(promociones_equipo)
+            else:
+                logger.info(f"👤 Vendedor solicita PROMOCIONES: {nombre_usuario}")
+                promociones_vendedor = obtener_promociones_vendedor(nombre_usuario)
+                promociones_equipo = obtener_promociones_equipo()
+                mensaje = generar_mensaje_promociones_vendedor(nombre_usuario, promociones_vendedor, promociones_equipo)
+            if not mensaje:
+                mensaje = "⚠️ Error generando reporte PROMOCIONES"
+            if enviar_mensaje_whatsapp(numero_remitente, mensaje):
+                logger.info(f"✅ Reporte PROMOS enviado a {nombre_usuario} (message_id={message_id})")
+            else:
+                logger.error(f"❌ Error enviando PROMOS a {nombre_usuario}; message_id conservado: {message_id}")
+            return
         if palabra_detectada == "CONCURSO":
             logger.info(f"☢️ Vendedor solicita CHERNOBYL: {nombre_usuario}")
             nombre_concurso = None if es_jefe(rol) else nombre_usuario
@@ -1404,7 +1561,7 @@ def status():
         "webhook": "/webhook",
         "version": "V4 ANTI-DUPLICADOS - WORKER",
         "periodo": ctx["periodo"],
-        "palabras_clave": ["RESUMEN", "TROYA", "CONCURSO"],
+        "palabras_clave": ["RESUMEN", "TROYA", "CONCURSO", "PROMOS"],
     }), 200
 
 # ============================================================
