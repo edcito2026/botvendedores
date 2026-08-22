@@ -542,7 +542,8 @@ def obtener_datos_concurso_chenobyl(nombre_vendedor):
 
         def grupo(productos):
             ph = ",".join("?" for _ in productos)
-            params = [f"%{nombre_vendedor}%", periodo] + [p.upper().strip() for p in productos]
+            filtro_vendedor = "%" if nombre_vendedor is None else f"%{nombre_vendedor}%"
+            params = [filtro_vendedor, periodo] + [p.upper().strip() for p in productos]
             cursor.execute(f"""
                 SELECT TRIM(Producto) producto,
                        COALESCE(SUM(CAST(Imp_Total AS REAL)),0) venta
@@ -1350,7 +1351,8 @@ def procesar_mensaje_en_segundo_plano(job):
         rol = datos_usuario.get("rol", "")
         if palabra_detectada == "CONCURSO":
             logger.info(f"☢️ Vendedor solicita CHERNOBYL: {nombre_usuario}")
-            datos_concurso = obtener_datos_concurso_chenobyl(nombre_usuario)
+            nombre_concurso = None if es_jefe(rol) else nombre_usuario
+            datos_concurso = obtener_datos_concurso_chenobyl(nombre_concurso)
             mensaje = generar_mensaje_concurso_chenobyl(datos_concurso)
             if enviar_mensaje_whatsapp(numero_remitente, mensaje):
                 logger.info(f"✅ Reporte CHERNOBYL enviado a {nombre_usuario} (message_id={message_id})")
